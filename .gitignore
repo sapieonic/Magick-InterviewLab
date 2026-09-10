@@ -19,3 +19,4 @@ blob-report/
 next-env.d.ts
 .pgdata/
 public/monaco/
+public/pyodide/

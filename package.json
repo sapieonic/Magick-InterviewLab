@@ -28,7 +28,8 @@
     "test:e2e:install": "playwright install chromium",
     "lint:fix": "eslint . --fix",
     "prebuild": "node scripts/copy-monaco.mjs",
-    "predev": "node scripts/copy-monaco.mjs"
+    "predev": "node scripts/copy-monaco.mjs",
+    "fetch:pyodide": "node scripts/fetch-pyodide.mjs"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",
