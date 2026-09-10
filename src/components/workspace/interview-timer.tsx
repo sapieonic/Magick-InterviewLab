@@ -24,19 +24,53 @@ export interface Countdown {
   totalMs: number;
 }
 
-export function useCountdown(startedAt: number | null, durationMinutes: number | null): Countdown | null {
-  const [now, setNow] = React.useState<number | null>(null);
+/**
+ * One second-resolution clock shared by every subscriber, exposed as an
+ * external store.
+ *
+ * `useSyncExternalStore` rather than `useState` + `useEffect` for two
+ * reasons: the server snapshot is `null`, so the server render and the
+ * hydrating render agree without a "mounted" flag; and the snapshot is a
+ * cached number rather than a fresh `Date.now()`, which is what stops React
+ * from re-rendering forever.
+ */
+let clockNow = 0;
+let clockHandle: number | null = null;
+const clockListeners = new Set<() => void>();
 
-  // Starts null so the server render and the first client render agree; the
-  // real clock arrives one tick later.
-  React.useEffect(() => {
-    if (startedAt === null || durationMinutes === null) return;
-    setNow(Date.now());
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, [startedAt, durationMinutes]);
+function subscribeToClock(listener: () => void): () => void {
+  clockListeners.add(listener);
+  clockNow = Date.now();
+  if (clockHandle === null) {
+    clockHandle = window.setInterval(() => {
+      clockNow = Date.now();
+      for (const notify of clockListeners) notify();
+    }, 1000);
+  }
+  return () => {
+    clockListeners.delete(listener);
+    if (clockListeners.size === 0 && clockHandle !== null) {
+      window.clearInterval(clockHandle);
+      clockHandle = null;
+    }
+  };
+}
 
-  if (startedAt === null || durationMinutes === null || now === null) return null;
+function clockSnapshot(): number {
+  return clockNow;
+}
+
+function serverClockSnapshot(): null {
+  return null;
+}
+
+export function useCountdown(
+  startedAt: number | null,
+  durationMinutes: number | null,
+): Countdown | null {
+  const now = React.useSyncExternalStore(subscribeToClock, clockSnapshot, serverClockSnapshot);
+
+  if (startedAt === null || durationMinutes === null || now === null || now === 0) return null;
   const totalMs = durationMinutes * 60_000;
   const remainingMs = startedAt + totalMs - now;
   return { remainingMs, expired: remainingMs <= 0, totalMs };

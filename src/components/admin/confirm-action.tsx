@@ -1,6 +1,6 @@
 'use client';
 
-import { useActionState, useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button, type ButtonProps } from '@/components/ui/button';
 import {
@@ -15,7 +15,6 @@ import {
 } from '@/components/ui/dialog';
 import { SubmitButton } from '@/components/admin/form';
 import { HiddenFields, type SimpleAction } from '@/components/admin/action-form';
-import type { ActionResult } from '@/lib/action-result';
 
 /**
  * Destructive mutations behind a confirmation. The dialog owns the form so
@@ -53,19 +52,16 @@ export function ConfirmAction({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [state, formAction] = useActionState(action, null);
-  const reported = useRef<ActionResult<undefined> | null>(null);
 
-  useEffect(() => {
-    if (!state || state === reported.current) return;
-    reported.current = state;
-    if (state.ok) {
+  async function submit(formData: FormData): Promise<void> {
+    const result = await action(null, formData);
+    if (result.ok) {
       setOpen(false);
       if (success) toast.success(success);
     } else {
-      toast.error(state.error);
+      toast.error(result.error);
     }
-  }, [state, success]);
+  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -88,7 +84,7 @@ export function ConfirmAction({
             <div className="space-y-2">{description}</div>
           </DialogDescription>
         </DialogHeader>
-        <form action={formAction}>
+        <form action={submit}>
           <HiddenFields fields={fields} />
           <DialogFooter>
             <DialogClose asChild>

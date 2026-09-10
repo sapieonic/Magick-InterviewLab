@@ -1,6 +1,5 @@
 'use client';
 
-import { useActionState, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
 import type { ActionResult } from '@/lib/action-result';
 
@@ -15,38 +14,33 @@ export type SimpleAction = (
  * These sit inside table rows, where an inline error banner would shove the
  * layout around, so the outcome is reported by toast instead. Forms that a
  * user actually fills in report errors next to the field, not here.
+ *
+ * The action is a plain async function rather than `useActionState`: React
+ * runs it inside a transition, so `useFormStatus` still reports pending and
+ * the result can be handled where it arrives instead of in an effect.
  */
 export function ActionForm({
   action,
   children,
   className,
   success,
-  onSuccess,
 }: {
   action: SimpleAction;
   children: React.ReactNode;
   className?: string;
   success?: string;
-  onSuccess?: () => void;
 }) {
-  const [state, formAction] = useActionState(action, null);
-  // `useActionState` hands back a fresh object per dispatch, so identity is
-  // enough to tell "new result" from "re-render".
-  const reported = useRef<ActionResult<undefined> | null>(null);
-
-  useEffect(() => {
-    if (!state || state === reported.current) return;
-    reported.current = state;
-    if (state.ok) {
+  async function submit(formData: FormData): Promise<void> {
+    const result = await action(null, formData);
+    if (result.ok) {
       if (success) toast.success(success);
-      onSuccess?.();
     } else {
-      toast.error(state.error);
+      toast.error(result.error);
     }
-  }, [state, success, onSuccess]);
+  }
 
   return (
-    <form action={formAction} className={className}>
+    <form action={submit} className={className}>
       {children}
     </form>
   );

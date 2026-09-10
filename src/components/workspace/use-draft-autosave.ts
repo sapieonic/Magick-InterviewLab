@@ -104,8 +104,13 @@ export function useDraftAutosave(questionId: string): DraftAutosave {
     }
   }, [questionId]);
 
+  // The debounce timer and the unload listeners are registered once but must
+  // call the latest `flush`; synced in an effect because a ref write during
+  // render is not something React can see.
   const flushRef = React.useRef(flush);
-  flushRef.current = flush;
+  React.useEffect(() => {
+    flushRef.current = flush;
+  }, [flush]);
 
   const queue = React.useCallback((language: Language, sourceCode: string) => {
     pendingRef.current.set(language, sourceCode);
@@ -138,4 +143,37 @@ export function useDraftAutosave(questionId: string): DraftAutosave {
   }, []);
 
   return { status, savedAt, queue, flush };
+}
+
+const localDraftCache = new Map<string, Record<string, LocalDraft>>();
+const noopSubscribe = () => () => {};
+
+/**
+ * The localStorage mirror for one question, read once and then frozen for the
+ * lifetime of the tab.
+ *
+ * Read through `useSyncExternalStore` rather than an effect so the server
+ * render and the hydrating client render agree (the server snapshot is
+ * `null`) and React swaps in the real value in the same commit. Frozen
+ * because this is only ever the *starting* buffer — re-reading it later would
+ * fight the editor the candidate is typing into.
+ */
+export function useLocalDrafts(
+  questionId: string,
+  languages: readonly Language[],
+): Record<string, LocalDraft> | null {
+  const cacheKey = `${questionId}|${languages.join(',')}`;
+  const getSnapshot = React.useCallback(() => {
+    const cached = localDraftCache.get(cacheKey);
+    if (cached) return cached;
+    const value: Record<string, LocalDraft> = {};
+    for (const language of languages) {
+      const draft = readLocalDraft(questionId, language);
+      if (draft) value[language] = draft;
+    }
+    localDraftCache.set(cacheKey, value);
+    return value;
+  }, [cacheKey, questionId, languages]);
+
+  return React.useSyncExternalStore(noopSubscribe, getSnapshot, () => null);
 }

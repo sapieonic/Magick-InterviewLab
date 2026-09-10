@@ -77,12 +77,16 @@ export function CodeEditor({
 
   // Monaco actions are registered once on mount, so they must read the
   // *current* handlers rather than the ones that existed at mount time.
+  // Synced in an effect, not during render: a ref write during render is
+  // invisible to React and breaks under concurrent rendering.
   const runRef = React.useRef(onRunShortcut);
   const saveRef = React.useRef(onSaveShortcut);
   const changeRef = React.useRef(onChange);
-  runRef.current = onRunShortcut;
-  saveRef.current = onSaveShortcut;
-  changeRef.current = onChange;
+  React.useEffect(() => {
+    runRef.current = onRunShortcut;
+    saveRef.current = onSaveShortcut;
+    changeRef.current = onChange;
+  }, [onRunShortcut, onSaveShortcut, onChange]);
 
   React.useEffect(() => {
     let cancelled = false;

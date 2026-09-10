@@ -44,22 +44,22 @@ export function SplitPane({
   className,
 }: SplitPaneProps) {
   const containerRef = React.useRef<HTMLDivElement>(null);
-  const [fraction, setFraction] = React.useState(defaultFraction);
+  const [dragged, setDragged] = React.useState<number | null>(null);
   const [dragging, setDragging] = React.useState(false);
   const isVertical = orientation === 'vertical';
 
-  // Read after mount, never during render: localStorage does not exist on the
-  // server and a differing first paint is a hydration error.
-  React.useEffect(() => {
-    if (!storageKey) return;
-    try {
-      const stored = window.localStorage.getItem(storageKey);
-      const parsed = stored === null ? Number.NaN : Number.parseFloat(stored);
-      if (Number.isFinite(parsed)) setFraction(clamp(parsed, minFraction, maxFraction));
-    } catch {
-      // Private mode / disabled storage: the default split is fine.
-    }
-  }, [storageKey, minFraction, maxFraction]);
+  // localStorage is read through an external store rather than an effect: the
+  // server has no storage, so the server snapshot is null and the default
+  // split renders identically on both sides of hydration.
+  const storedRaw = React.useSyncExternalStore(
+    noopSubscribe,
+    React.useCallback(() => readStoredFraction(storageKey), [storageKey]),
+    () => null,
+  );
+  const storedFraction =
+    storedRaw === null ? null : clamp(storedRaw, minFraction, maxFraction);
+  const fraction = dragged ?? storedFraction ?? defaultFraction;
+  const setFraction = setDragged;
 
   const persist = React.useCallback(
     (next: number) => {

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState, useTransition } from 'react';
+import { useOptimistic, useTransition } from 'react';
 import { toast } from 'sonner';
 import { ArrowDown, ArrowUp, X } from 'lucide-react';
 import type { Difficulty } from '@/generated/prisma/enums';
@@ -25,6 +25,11 @@ export interface InterviewQuestionItem {
  * Up/down buttons rather than drag-and-drop: no dependency, keyboard-usable
  * for free, and the reorder is expressed as the whole ordered list so a
  * double-click cannot commit half a swap.
+ *
+ * `useOptimistic` rather than local state synced from props: the swap shows
+ * instantly, and when the transition ends the list falls back to whatever
+ * the server actually has — which is also the revert path when the write is
+ * refused, with no reconciliation code of our own.
  */
 export function InterviewQuestions({
   interviewId,
@@ -33,45 +38,27 @@ export function InterviewQuestions({
   interviewId: string;
   questions: InterviewQuestionItem[];
 }) {
-  const serverOrder = questions.map((q) => q.id);
-  const [order, setOrder] = useState<string[]>(serverOrder);
+  const [ordered, setOptimisticOrder] = useOptimistic(questions);
   const [pending, startTransition] = useTransition();
-
-  // The server is the source of truth; re-sync whenever a revalidation
-  // brings a different list (an add, a remove, or another admin's edit).
-  const serverKey = serverOrder.join(',');
-  useEffect(() => {
-    setOrder(serverKey === '' ? [] : serverKey.split(','));
-  }, [serverKey]);
-
-  const byId = new Map(questions.map((q) => [q.id, q]));
-  const ordered = order.flatMap((id) => {
-    const question = byId.get(id);
-    return question ? [question] : [];
-  });
 
   function move(index: number, delta: number): void {
     const target = index + delta;
-    if (target < 0 || target >= order.length) return;
+    if (target < 0 || target >= ordered.length) return;
 
-    const next = [...order];
+    const next = [...ordered];
     const moved = next[index];
     const displaced = next[target];
     if (moved === undefined || displaced === undefined) return;
     next[index] = displaced;
     next[target] = moved;
 
-    setOrder(next);
     startTransition(async () => {
+      setOptimisticOrder(next);
       const result = await reorderInterviewQuestionsAction({
         interviewId,
-        questionIds: next,
+        questionIds: next.map((q) => q.id),
       });
-      if (!result.ok) {
-        // Put the optimistic swap back — the server refused it.
-        setOrder(order);
-        toast.error(result.error);
-      }
+      if (!result.ok) toast.error(result.error);
     });
   }
 
