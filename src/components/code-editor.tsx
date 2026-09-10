@@ -9,17 +9,41 @@ import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 
 /**
- * Monaco, with an escape hatch.
+ * Monaco, self-hosted, with an escape hatch.
  *
- * Monaco is loaded from a CDN by `@monaco-editor/loader`. That is fine until
- * it isn't — a corporate proxy, an offline laptop, a bad afternoon at
- * jsDelivr — and a candidate in a timed interview cannot be left staring at a
- * skeleton. So the load is watched explicitly and a plain monospace textarea
- * takes over on failure or after `LOAD_TIMEOUT_MS`. It is a worse editor; it
- * is not a locked door.
+ * `@monaco-editor/loader` defaults to a CDN. We override that to
+ * `/monaco/vs`, copied out of the npm package by `scripts/copy-monaco.mjs`
+ * before every build: a candidate behind a corporate proxy, an air-gapped
+ * deployment and a Docker host with no egress all have to work, and none of
+ * them can reach jsDelivr.
+ *
+ * The fallback stays anyway. Self-hosting removes the likeliest failure, not
+ * every failure, and a candidate in a timed interview cannot be left staring
+ * at a skeleton — so the load is watched explicitly and a plain monospace
+ * textarea takes over on failure or after `LOAD_TIMEOUT_MS`. It is a worse
+ * editor; it is not a locked door.
  */
 
 const LOAD_TIMEOUT_MS = 20_000;
+
+/** Served from `public/monaco/vs`; see `scripts/copy-monaco.mjs`. */
+const MONACO_VS_PATH = '/monaco/vs';
+
+/**
+ * `loader.config()` must run before the first `loader.init()` and throws if
+ * it runs after. Two editors mounting in the same session (a language switch
+ * remounts one) would otherwise race, so the whole handshake is memoised into
+ * a single promise here rather than repeated per mount.
+ */
+let monacoReady: Promise<unknown> | undefined;
+
+function ensureMonacoLoaded(): Promise<unknown> {
+  monacoReady ??= import('@monaco-editor/react').then((mod) => {
+    mod.loader.config({ paths: { vs: MONACO_VS_PATH } });
+    return mod.loader.init();
+  });
+  return monacoReady;
+}
 
 const MonacoEditor = dynamic(() => import('@monaco-editor/react').then((mod) => mod.Editor), {
   ssr: false,
@@ -99,8 +123,7 @@ export function CodeEditor({
     // `loader.init()` is memoised inside the package, so resolving it here
     // costs nothing extra when <Editor> mounts a moment later — it just gives
     // us a promise to attach a failure path to.
-    void import('@monaco-editor/react')
-      .then((mod) => mod.loader.init())
+    void ensureMonacoLoaded()
       .then(() => {
         if (!cancelled) setStatus('ready');
       })

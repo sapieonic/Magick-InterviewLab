@@ -18,3 +18,4 @@ blob-report/
 *.tsbuildinfo
 next-env.d.ts
 .pgdata/
+public/monaco/
