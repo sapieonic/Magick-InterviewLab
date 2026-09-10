@@ -160,12 +160,26 @@ test('admin authors an interview, a candidate solves it, admin reviews the submi
 
 // --------------------------------------------------------------------------
 
-/** The editor starts with one row; add until there are `count` of them. */
+/**
+ * The editor starts with one row; add until there are `count` of them.
+ *
+ * The click is retried rather than issued once. Playwright waits for the
+ * button to be *actionable*, which a server-rendered button already is —
+ * but the React handler is not attached until the island hydrates, so a
+ * single early click is swallowed silently. That is invisible against a
+ * production build and reproducible against `next dev`, where compilation
+ * pushes hydration well past the first interaction.
+ */
 async function ensureTestCaseRows(page: Page, count: number): Promise<void> {
   const inputs = page.getByLabel('Input (stdin)');
-  for (let existing = await inputs.count(); existing < count; existing += 1) {
-    await page.getByRole('button', { name: /add test/i }).click();
-    await expect(inputs).toHaveCount(existing + 1);
+  const addTest = page.getByRole('button', { name: /add test/i });
+
+  while ((await inputs.count()) < count) {
+    const before = await inputs.count();
+    await expect(async () => {
+      await addTest.click();
+      await expect(inputs).toHaveCount(before + 1, { timeout: 2_000 });
+    }).toPass({ timeout: 30_000 });
   }
 }
 
