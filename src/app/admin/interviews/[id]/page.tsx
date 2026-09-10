@@ -16,7 +16,11 @@ import {
 import { PageHeader, Section } from '@/components/admin/page-header';
 import { InterviewForm } from '@/components/admin/interview-form';
 import { InterviewQuestions } from '@/components/admin/interview-questions';
-import { ActiveBadge, AssignmentStatusBadge, InterviewStatusBadge } from '@/components/admin/badges';
+import {
+  ActiveBadge,
+  AssignmentStatusBadge,
+  InterviewStatusBadge,
+} from '@/components/admin/badges';
 import { ActionForm } from '@/components/admin/action-form';
 import { ConfirmAction } from '@/components/admin/confirm-action';
 import { SubmitButton } from '@/components/admin/form';
@@ -82,8 +86,8 @@ export default async function InterviewDetailPage({ params }: PageProps) {
               description={
                 <>
                   <p>
-                    Archived interviews stay readable and keep their submissions, but candidates
-                    can no longer sit them and the interview drops out of the assignment pickers.
+                    Archived interviews stay readable and keep their submissions, but candidates can
+                    no longer sit them and the interview drops out of the assignment pickers.
                   </p>
                   <p>You can publish it again from the form on this page.</p>
                 </>

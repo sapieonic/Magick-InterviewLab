@@ -55,15 +55,14 @@ function renderInline(raw: string): string {
   text = text.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
   text = text.replace(/(?<![*\w])\*([^*\n]+)\*(?!\*)/g, '<em>$1</em>');
 
-  return text.replace(SENTINEL_RE, (_match, index: string) => `<code>${codes[Number(index)] ?? ''}</code>`);
+  return text.replace(
+    SENTINEL_RE,
+    (_match, index: string) => `<code>${codes[Number(index)] ?? ''}</code>`,
+  );
 }
 
 export function renderMarkdown(source: string): string {
-  const lines = source
-    .split(SENTINEL)
-    .join('')
-    .replace(/\r\n?/g, '\n')
-    .split('\n');
+  const lines = source.split(SENTINEL).join('').replace(/\r\n?/g, '\n').split('\n');
   const out: string[] = [];
   let i = 0;
 

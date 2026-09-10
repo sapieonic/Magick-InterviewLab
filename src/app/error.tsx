@@ -21,8 +21,8 @@ export default function GlobalError({
     <main className="flex min-h-dvh flex-col items-center justify-center gap-5 px-6">
       <Wordmark />
       <Alert tone="error" title="Something went wrong" className="max-w-md">
-        An unexpected error occurred. Try again — if it keeps happening, contact your
-        administrator{error.digest ? ` and quote reference ${error.digest}` : ''}.
+        An unexpected error occurred. Try again — if it keeps happening, contact your administrator
+        {error.digest ? ` and quote reference ${error.digest}` : ''}.
       </Alert>
       <Button size="sm" onClick={reset}>
         Try again

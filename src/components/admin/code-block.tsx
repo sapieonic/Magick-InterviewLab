@@ -56,7 +56,7 @@ export function OutputBlock({
       </p>
       <pre
         className={cn(
-          'bg-surface-code scrollbar-thin max-h-40 overflow-auto rounded border px-2.5 py-2 font-mono text-[12px] leading-relaxed whitespace-pre-wrap',
+          'bg-surface-code max-h-40 scrollbar-thin overflow-auto rounded border px-2.5 py-2 font-mono text-[12px] leading-relaxed whitespace-pre-wrap',
           tone === 'expected' && 'border-success/30',
           tone === 'actual' && 'border-destructive/30',
         )}

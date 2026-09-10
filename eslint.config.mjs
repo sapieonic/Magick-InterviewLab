@@ -6,13 +6,15 @@ import typescript from 'eslint-config-next/typescript';
  * FlatCompat shim that older Next projects use is not only unnecessary here,
  * it crashes on the nested plugin objects.
  */
-export default [
+const config = [
   {
     ignores: [
       '.next/**',
       'node_modules/**',
       'src/generated/**',
       'public/workers/**',
+      // Vendored Monaco distribution, staged by scripts/copy-monaco.mjs.
+      'public/monaco/**',
       'test-results/**',
       'playwright-report/**',
       'next-env.d.ts',
@@ -30,3 +32,5 @@ export default [
     },
   },
 ];
+
+export default config;

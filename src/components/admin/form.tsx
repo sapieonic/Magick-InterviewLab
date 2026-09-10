@@ -35,7 +35,13 @@ export function FieldErrors({ errors, id }: { errors?: string[]; id?: string }) 
  * Top-of-form banner. Field-level messages render next to their input, so a
  * result that carries only field errors must not also shout a generic line.
  */
-export function FormAlert<T>({ state, success }: { state: ActionResult<T> | null; success?: string }) {
+export function FormAlert<T>({
+  state,
+  success,
+}: {
+  state: ActionResult<T> | null;
+  success?: string;
+}) {
   if (!state) return null;
   if (state.ok) return success ? <Alert tone="success">{success}</Alert> : null;
   if (state.fieldErrors && Object.keys(state.fieldErrors).length > 0) return null;

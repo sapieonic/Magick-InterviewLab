@@ -4,7 +4,10 @@ import { cn } from '@/lib/utils';
 export function Table({ className, ...props }: React.ComponentProps<'table'>) {
   return (
     <div className="w-full overflow-x-auto">
-      <table className={cn('w-full caption-bottom border-collapse text-sm', className)} {...props} />
+      <table
+        className={cn('w-full caption-bottom border-collapse text-sm', className)}
+        {...props}
+      />
     </div>
   );
 }
@@ -15,7 +18,9 @@ export function TableBody({ className, ...props }: React.ComponentProps<'tbody'>
   return <tbody className={cn('[&_tr:last-child]:border-0', className)} {...props} />;
 }
 export function TableRow({ className, ...props }: React.ComponentProps<'tr'>) {
-  return <tr className={cn('hover:bg-muted/40 border-b transition-colors', className)} {...props} />;
+  return (
+    <tr className={cn('hover:bg-muted/40 border-b transition-colors', className)} {...props} />
+  );
 }
 export function TableHead({ className, ...props }: React.ComponentProps<'th'>) {
   return (

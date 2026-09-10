@@ -27,7 +27,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-dvh antialiased">
         <ThemeProvider>
           {children}
-          <Toaster position="bottom-right" closeButton richColors toastOptions={{ duration: 4500 }} />
+          <Toaster
+            position="bottom-right"
+            closeButton
+            richColors
+            toastOptions={{ duration: 4500 }}
+          />
         </ThemeProvider>
       </body>
     </html>

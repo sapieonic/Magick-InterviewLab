@@ -30,7 +30,10 @@ export async function signIn(page: Page, email: string, password: string): Promi
 export async function signOut(page: Page): Promise<void> {
   // A modal left open from the previous step would swallow the click.
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: /sign out/i }).first().click();
+  await page
+    .getByRole('button', { name: /sign out/i })
+    .first()
+    .click();
   await expect(page).toHaveURL(/\/login/, { timeout: 30_000 });
 }
 

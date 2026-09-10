@@ -14,7 +14,12 @@ const serverSchema = z.object({
   ADMIN_PASSWORD: z.string().optional(),
   ADMIN_NAME: z.string().default('MagicVoice Admin'),
 
-  SESSION_TTL_HOURS: z.coerce.number().int().positive().max(24 * 30).default(12),
+  SESSION_TTL_HOURS: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(24 * 30)
+    .default(12),
   COOKIE_SECURE: z
     .enum(['true', 'false'])
     .optional()
@@ -36,7 +41,9 @@ export function serverEnv(): ServerEnv {
   if (cached) return cached;
   const parsed = serverSchema.safeParse(process.env);
   if (!parsed.success) {
-    const issues = parsed.error.issues.map((i) => `  - ${i.path.join('.')}: ${i.message}`).join('\n');
+    const issues = parsed.error.issues
+      .map((i) => `  - ${i.path.join('.')}: ${i.message}`)
+      .join('\n');
     throw new Error(`Invalid server environment:\n${issues}`);
   }
   const value = parsed.data;

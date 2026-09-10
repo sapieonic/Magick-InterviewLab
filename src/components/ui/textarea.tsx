@@ -9,7 +9,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, React.ComponentPro
         className={cn(
           'border-input bg-background placeholder:text-muted-foreground/70 flex min-h-20 w-full rounded-md border px-3 py-2 text-sm shadow-xs transition-colors',
           'focus-visible:outline-ring focus-visible:outline-2 focus-visible:outline-offset-[-1px]',
-          'disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive',
+          'aria-invalid:border-destructive disabled:cursor-not-allowed disabled:opacity-50',
           className,
         )}
         {...props}

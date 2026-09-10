@@ -35,7 +35,9 @@ export function PageHeader({
             <div className="text-muted-foreground text-[13px]">{description}</div>
           ) : null}
         </div>
-        {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
+        {actions ? (
+          <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>
+        ) : null}
       </div>
     </div>
   );
@@ -60,9 +62,7 @@ export function Section({
       <div className="flex flex-wrap items-start justify-between gap-2 border-b px-4 py-3">
         <div className="min-w-0 space-y-0.5">
           <h2 className="text-sm font-semibold tracking-tight">{title}</h2>
-          {description ? (
-            <p className="text-muted-foreground text-[12px]">{description}</p>
-          ) : null}
+          {description ? <p className="text-muted-foreground text-[12px]">{description}</p> : null}
         </div>
         {actions ? <div className="flex shrink-0 items-center gap-2">{actions}</div> : null}
       </div>

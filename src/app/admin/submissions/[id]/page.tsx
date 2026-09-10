@@ -18,7 +18,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { id } = await params;
   const submission = await getSubmission(id);
   return {
-    title: submission ? `${submission.candidate.name} · ${submission.question.title}` : 'Submission',
+    title: submission
+      ? `${submission.candidate.name} · ${submission.question.title}`
+      : 'Submission',
   };
 }
 

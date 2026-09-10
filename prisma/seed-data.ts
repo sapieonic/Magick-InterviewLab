@@ -79,7 +79,12 @@ print(s)  # your answer here
 `,
     },
     testCases: [
-      { input: 'magicvoice', expectedOutput: 'eciovcigam', description: 'Lowercase word', weight: 1 },
+      {
+        input: 'magicvoice',
+        expectedOutput: 'eciovcigam',
+        description: 'Lowercase word',
+        weight: 1,
+      },
       { input: 'a', expectedOutput: 'a', description: 'Single character', weight: 1 },
       {
         input: 'Never odd or even',
@@ -147,7 +152,12 @@ print(i, j)
 `,
     },
     testCases: [
-      { input: '2 7 11 15\n9', expectedOutput: '0 1', description: 'Answer at the front', weight: 1 },
+      {
+        input: '2 7 11 15\n9',
+        expectedOutput: '0 1',
+        description: 'Answer at the front',
+        weight: 1,
+      },
       { input: '3 2 4\n6', expectedOutput: '1 2', description: 'Answer in the middle', weight: 1 },
       { input: '3 3\n6', expectedOutput: '0 1', description: 'Duplicate values', weight: 2 },
       {

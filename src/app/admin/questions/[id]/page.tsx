@@ -38,8 +38,7 @@ export default async function QuestionDetailPage({ params }: PageProps) {
               Used in {interviewCount} {interviewCount === 1 ? 'interview' : 'interviews'}
             </span>
             <span>
-              {usage.submissionCount}{' '}
-              {usage.submissionCount === 1 ? 'submission' : 'submissions'}
+              {usage.submissionCount} {usage.submissionCount === 1 ? 'submission' : 'submissions'}
             </span>
             <span>Updated {formatDate(question.updatedAt)}</span>
           </span>
@@ -71,8 +70,8 @@ export default async function QuestionDetailPage({ params }: PageProps) {
                 ) : null}
                 {usage.submissionCount > 0 ? (
                   <p className="text-destructive">
-                    Candidate answers already scored against this question will be gone. Archive
-                    the interview instead if you only want to retire the question.
+                    Candidate answers already scored against this question will be gone. Archive the
+                    interview instead if you only want to retire the question.
                   </p>
                 ) : null}
               </>

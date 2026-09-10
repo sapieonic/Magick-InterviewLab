@@ -6,7 +6,10 @@ const INTERVIEW_STATUS = {
   DRAFT: { label: 'Draft', variant: 'outline' },
   PUBLISHED: { label: 'Published', variant: 'success' },
   ARCHIVED: { label: 'Archived', variant: 'secondary' },
-} as const satisfies Record<InterviewStatus, { label: string; variant: 'outline' | 'success' | 'secondary' }>;
+} as const satisfies Record<
+  InterviewStatus,
+  { label: string; variant: 'outline' | 'success' | 'secondary' }
+>;
 
 export function InterviewStatusBadge({ status }: { status: InterviewStatus }) {
   const { label, variant } = INTERVIEW_STATUS[status];
@@ -17,7 +20,10 @@ const DIFFICULTY = {
   EASY: { label: 'Easy', variant: 'success' },
   MEDIUM: { label: 'Medium', variant: 'warning' },
   HARD: { label: 'Hard', variant: 'destructive' },
-} as const satisfies Record<Difficulty, { label: string; variant: 'success' | 'warning' | 'destructive' }>;
+} as const satisfies Record<
+  Difficulty,
+  { label: string; variant: 'success' | 'warning' | 'destructive' }
+>;
 
 export function DifficultyBadge({ difficulty }: { difficulty: Difficulty }) {
   const { label, variant } = DIFFICULTY[difficulty];
@@ -28,7 +34,10 @@ const ASSIGNMENT_STATUS = {
   ASSIGNED: { label: 'Assigned', variant: 'outline' },
   IN_PROGRESS: { label: 'In progress', variant: 'default' },
   COMPLETED: { label: 'Completed', variant: 'success' },
-} as const satisfies Record<AssignmentStatus, { label: string; variant: 'outline' | 'default' | 'success' }>;
+} as const satisfies Record<
+  AssignmentStatus,
+  { label: string; variant: 'outline' | 'default' | 'success' }
+>;
 
 export function AssignmentStatusBadge({ status }: { status: AssignmentStatus }) {
   const { label, variant } = ASSIGNMENT_STATUS[status];

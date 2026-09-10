@@ -16,7 +16,7 @@ export function DialogContent({
 }: React.ComponentProps<typeof DialogPrimitive.Content>) {
   return (
     <DialogPrimitive.Portal>
-      <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/45 backdrop-blur-[1px] data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=open]:animate-in data-[state=open]:fade-in" />
+      <DialogPrimitive.Overlay className="data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=open]:animate-in data-[state=open]:fade-in fixed inset-0 z-50 bg-black/45 backdrop-blur-[1px]" />
       <DialogPrimitive.Content
         className={cn(
           'bg-card fixed top-1/2 left-1/2 z-50 grid w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border p-5 shadow-lg',
@@ -62,7 +62,5 @@ export function DialogDescription({
   );
 }
 export function DialogFooter({ className, ...props }: React.ComponentProps<'div'>) {
-  return (
-    <div className={cn('flex flex-wrap justify-end gap-2 pt-1', className)} {...props} />
-  );
+  return <div className={cn('flex flex-wrap justify-end gap-2 pt-1', className)} {...props} />;
 }

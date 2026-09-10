@@ -95,7 +95,10 @@ export function QuestionEditor({ initial }: { initial: QuestionEditorValues }) {
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
 
-  const totalWeight = rows.reduce((sum, row) => sum + (Number.isFinite(row.weight) ? row.weight : 0), 0);
+  const totalWeight = rows.reduce(
+    (sum, row) => sum + (Number.isFinite(row.weight) ? row.weight : 0),
+    0,
+  );
 
   function toggleLanguage(language: Language, checked: boolean): void {
     setLanguages((current) =>
@@ -104,9 +107,7 @@ export function QuestionEditor({ initial }: { initial: QuestionEditorValues }) {
   }
 
   function patchRow(index: number, patch: Partial<QuestionEditorTestCase>): void {
-    setRows((current) =>
-      current.map((row, i) => (i === index ? { ...row, ...patch } : row)),
-    );
+    setRows((current) => current.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   }
 
   function moveRow(index: number, delta: number): void {

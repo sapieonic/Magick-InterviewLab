@@ -13,7 +13,8 @@ const buttonVariants = cva(
       variant: {
         default: 'bg-primary text-primary-foreground hover:bg-primary/90 shadow-xs',
         destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-xs',
-        outline: 'border border-input bg-background hover:bg-accent hover:text-accent-foreground shadow-xs',
+        outline:
+          'border border-input bg-background hover:bg-accent hover:text-accent-foreground shadow-xs',
         secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
         ghost: 'hover:bg-accent hover:text-accent-foreground',
         link: 'text-primary underline-offset-4 hover:underline',
@@ -33,8 +34,7 @@ const buttonVariants = cva(
 );
 
 export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
-    VariantProps<typeof buttonVariants> {
+  extends React.ButtonHTMLAttributes<HTMLButtonElement>, VariantProps<typeof buttonVariants> {
   asChild?: boolean;
   loading?: boolean;
 }
@@ -48,11 +48,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function 
   // and blow up at render, so the loading affordance is button-only.
   if (asChild) {
     return (
-      <Slot.Root
-        ref={ref}
-        className={cn(buttonVariants({ variant, size, className }))}
-        {...props}
-      >
+      <Slot.Root ref={ref} className={cn(buttonVariants({ variant, size, className }))} {...props}>
         {children}
       </Slot.Root>
     );

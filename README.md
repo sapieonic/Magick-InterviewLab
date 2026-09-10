@@ -91,23 +91,23 @@ bootstrap is create-only.
 
 Every variable, what it does, and whether it is required.
 
-| Variable | Required | Default | Exposed to browser | Purpose |
-| --- | --- | --- | --- | --- |
-| `DATABASE_URL` | **yes** | — | no | PostgreSQL connection string. |
-| `ADMIN_EMAIL` | recommended | — | no | Bootstrap admin's email. Without it no admin is created. |
-| `ADMIN_PASSWORD_HASH` | recommended | — | no | Argon2id hash for the bootstrap admin. Generate with `npm run hash-password`. |
-| `ADMIN_PASSWORD` | no | — | no | Plaintext alternative, **development only**; throws in production. |
-| `ADMIN_NAME` | no | `MagicVoice Admin` | no | Display name for the bootstrap admin. |
-| `SESSION_TTL_HOURS` | no | `12` | no | Session lifetime. |
-| `COOKIE_SECURE` | no | auto | no | Force the `Secure` cookie flag. Defaults to on when `NODE_ENV=production`. Set `true` when TLS terminates upstream in a non-production build. |
-| `SEED_CANDIDATE_EMAIL` | no | `candidate@magicvoice.local` | no | Email for the seeded demo candidate. |
-| `SEED_CANDIDATE_PASSWORD` | no | random | no | Password for the seeded candidate. If unset, one is generated and printed once. |
-| `SEED_DEMO_DATA` | no | `true` | no | Set `false` to seed only the admin. |
-| `NEXT_PUBLIC_APP_NAME` | no | `MagicVoice` | **yes** | Brand name in the UI. |
-| `NEXT_PUBLIC_APP_URL` | no | `http://localhost:3000` | **yes** | Canonical URL. |
-| `NEXT_PUBLIC_PYODIDE_INDEX_URL` | no | jsDelivr CDN | **yes** | Where the Python (Pyodide) runtime is fetched from. Point at your own host to run air-gapped. |
-| `PORT` | no | `3000` | no | Server port. |
-| `RUN_MIGRATIONS` | no | `true` | no | Docker entrypoint only: run `prisma migrate deploy` on container start. |
+| Variable                        | Required    | Default                      | Exposed to browser | Purpose                                                                                                                                       |
+| ------------------------------- | ----------- | ---------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                  | **yes**     | —                            | no                 | PostgreSQL connection string.                                                                                                                 |
+| `ADMIN_EMAIL`                   | recommended | —                            | no                 | Bootstrap admin's email. Without it no admin is created.                                                                                      |
+| `ADMIN_PASSWORD_HASH`           | recommended | —                            | no                 | Argon2id hash for the bootstrap admin. Generate with `npm run hash-password`.                                                                 |
+| `ADMIN_PASSWORD`                | no          | —                            | no                 | Plaintext alternative, **development only**; throws in production.                                                                            |
+| `ADMIN_NAME`                    | no          | `MagicVoice Admin`           | no                 | Display name for the bootstrap admin.                                                                                                         |
+| `SESSION_TTL_HOURS`             | no          | `12`                         | no                 | Session lifetime.                                                                                                                             |
+| `COOKIE_SECURE`                 | no          | auto                         | no                 | Force the `Secure` cookie flag. Defaults to on when `NODE_ENV=production`. Set `true` when TLS terminates upstream in a non-production build. |
+| `SEED_CANDIDATE_EMAIL`          | no          | `candidate@magicvoice.local` | no                 | Email for the seeded demo candidate.                                                                                                          |
+| `SEED_CANDIDATE_PASSWORD`       | no          | random                       | no                 | Password for the seeded candidate. If unset, one is generated and printed once.                                                               |
+| `SEED_DEMO_DATA`                | no          | `true`                       | no                 | Set `false` to seed only the admin.                                                                                                           |
+| `NEXT_PUBLIC_APP_NAME`          | no          | `MagicVoice`                 | **yes**            | Brand name in the UI.                                                                                                                         |
+| `NEXT_PUBLIC_APP_URL`           | no          | `http://localhost:3000`      | **yes**            | Canonical URL.                                                                                                                                |
+| `NEXT_PUBLIC_PYODIDE_INDEX_URL` | no          | jsDelivr CDN                 | **yes**            | Where the Python (Pyodide) runtime is fetched from. Point at your own host to run air-gapped.                                                 |
+| `PORT`                          | no          | `3000`                       | no                 | Server port.                                                                                                                                  |
+| `RUN_MIGRATIONS`                | no          | `true`                       | no                 | Docker entrypoint only: run `prisma migrate deploy` on container start.                                                                       |
 
 Only `NEXT_PUBLIC_*` variables reach the browser. This is enforced structurally,
 not by convention: `src/lib/env.server.ts` imports `server-only`, so importing
@@ -122,8 +122,8 @@ This is the flow the product is built around, and the one the
 [end-to-end test](#testing) exercises on every CI run.
 
 1. Admin signs in with the environment-configured credentials.
-2. Admin creates an interview — *Frontend Engineer Interview*.
-3. Admin creates questions — *Reverse a String*, *Two Sum*, *Find the Duplicate*.
+2. Admin creates an interview — _Frontend Engineer Interview_.
+3. Admin creates questions — _Reverse a String_, _Two Sum_, _Find the Duplicate_.
 4. Admin adds test cases to each question (input, expected output, weight).
 5. Admin adds the questions to the interview and orders them.
 6. Admin creates a candidate with an explicitly chosen temporary password.
@@ -155,13 +155,13 @@ standard input and the program's trimmed standard output is compared against
 `expectedOutput`. That contract is language-agnostic, deterministic, and maps
 one-to-one onto a future server-side sandbox — which is the point.
 
-| | JavaScript | Python |
-| --- | --- | --- |
-| Runtime | Web Worker (isolated realm) | Pyodide (CPython → WebAssembly) in a Web Worker |
-| Reading input | `readLine()`, `readAll()`, `input()` | `input()`, `sys.stdin.read()` |
-| Writing output | `console.log` | `print()` |
-| Loaded | immediately (tiny) | lazily, on first Python run |
-| Hard timeout | `worker.terminate()` | `worker.terminate()` + re-init |
+|                | JavaScript                           | Python                                          |
+| -------------- | ------------------------------------ | ----------------------------------------------- |
+| Runtime        | Web Worker (isolated realm)          | Pyodide (CPython → WebAssembly) in a Web Worker |
+| Reading input  | `readLine()`, `readAll()`, `input()` | `input()`, `sys.stdin.read()`                   |
+| Writing output | `console.log`                        | `print()`                                       |
+| Loaded         | immediately (tiny)                   | lazily, on first Python run                     |
+| Hard timeout   | `worker.terminate()`                 | `worker.terminate()` + re-init                  |
 
 Both runtimes are behind one interface, so the UI has no idea which is which:
 
@@ -189,22 +189,37 @@ The product does not pretend otherwise:
 - `TestCase.isHidden` exists in the schema and is **always false in the MVP**.
 - Scores are recomputed **on the server** from the authoritative test weights,
   so a tampered payload cannot invent a 100% out of results that say otherwise.
-  It can still lie about *which* tests passed. That is the honest boundary.
+  It can still lie about _which_ tests passed. That is the honest boundary.
 - Closing it properly requires the second executor —
   see [Future work](#future-work).
 
-Use InterviewLab as a *live, observed* interview tool or an *unproctored
-screen where the code is read by a human*, not as an unsupervised
+Use InterviewLab as a _live, observed_ interview tool or an _unproctored
+screen where the code is read by a human_, not as an unsupervised
 pass/fail gate.
+
+### Where the runtimes come from
+
+**Monaco is self-hosted.** `@monaco-editor/loader` defaults to a CDN;
+`scripts/copy-monaco.mjs` stages the npm copy into `public/monaco/vs` before
+`dev` and `build` and the loader is pointed at our own origin. A candidate
+behind a corporate proxy gets the real editor, not the fallback. The
+directory is generated, so it is git-ignored — `npm run build` recreates it.
+
+**Pyodide is still fetched from a CDN by default**, because the full
+distribution is large and most deployments have egress. Set
+`NEXT_PUBLIC_PYODIDE_INDEX_URL` to a self-hosted copy for an air-gapped
+install; a failed download surfaces as a specific, actionable error rather
+than a hang.
 
 ### Browser requirements
 
 Execution needs WebAssembly and Web Workers. The workspace probes for both up
 front (`detectRuntimeCapabilities()`); if either is missing, **Run tests** is
-disabled with an explanation instead of failing silently. Pyodide failing to
-download (offline, blocked CDN, corporate proxy) surfaces as a specific error,
-and every run is wrapped in a hard timeout that terminates the worker — so the
-UI never sits on a permanent "Running…".
+disabled with an explanation instead of failing silently. Every run is wrapped
+in a hard timeout that terminates the worker, so the UI never sits on a
+permanent "Running…". If Monaco itself cannot load, the editor degrades to a
+monospace textarea that still runs and submits — a worse editor, not a locked
+door.
 
 ---
 
@@ -279,7 +294,7 @@ three reasons that compound:
 2. **Licensing.** The WebContainer API requires registration and a commercial
    licence for use outside StackBlitz-hosted origins. That is a procurement
    dependency in the critical path of an internal tool.
-3. **It buys nothing here.** WebContainers exist to run a *Node project* —
+3. **It buys nothing here.** WebContainers exist to run a _Node project_ —
    npm installs, a dev server, a filesystem. Our contract is
    "one file, stdin in, stdout out". A Worker already gives us a realm with no
    DOM, no cookies, no `localStorage`, and — critically — `terminate()`, which
@@ -309,7 +324,7 @@ session table with extra steps.
 
 ### Scoring is recomputed server-side
 
-The browser is the only thing that *can* report which tests passed, but it is
+The browser is the only thing that _can_ report which tests passed, but it is
 not trusted to report a score. `scoreSubmission()` takes the authoritative
 `TestCase` weights from the database and ignores anything weight-shaped in the
 client payload. Results for test ids that do not belong to the question are
@@ -332,20 +347,20 @@ this application never needs rich option rendering.
 
 ## Security model
 
-| Concern | Control |
-| --- | --- |
-| Password storage | Argon2id (19 MiB, t=2, p=1 — OWASP baseline). Plaintext is never stored, logged, or returned. |
-| Session | 256-bit opaque token in an `HttpOnly`, `SameSite=Lax`, `Secure`-in-production cookie. Only the SHA-256 is stored. |
-| Revocation | Password change, admin reset and deactivation all delete every session for that user. |
-| Authorization | Enforced in Server Components and in **every** Server Action via `requireAdmin()` / `requireCandidate()`. Hiding a nav item is presentation, never a control. |
-| Object-level access | A candidate's workspace re-verifies that the assignment is theirs *and* that the question belongs to that interview. Anything else is a 404, not a 403 — existence does not leak. |
-| User enumeration | Login returns one message for unknown-email and wrong-password, and performs a dummy Argon2 verification on the unknown-email path so the timing matches. Account-inactive is only reported *after* a correct password. |
-| Open redirect | `?next=` is honoured only for same-origin absolute paths. |
-| Input validation | Zod at every network boundary, server-side, before any database call. |
-| Secret exposure | `server-only` on the server env module makes a browser import a build failure. |
-| Candidate code | Runs in the candidate's browser, in a worker with network APIs revoked. It cannot reach the server's environment, filesystem, database or internal network. |
-| XSS | Markdown is escaped before rendering; candidate source code and program output are rendered as text, never as HTML. |
-| Headers | `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy` set globally. |
+| Concern             | Control                                                                                                                                                                                                                 |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Password storage    | Argon2id (19 MiB, t=2, p=1 — OWASP baseline). Plaintext is never stored, logged, or returned.                                                                                                                           |
+| Session             | 256-bit opaque token in an `HttpOnly`, `SameSite=Lax`, `Secure`-in-production cookie. Only the SHA-256 is stored.                                                                                                       |
+| Revocation          | Password change, admin reset and deactivation all delete every session for that user.                                                                                                                                   |
+| Authorization       | Enforced in Server Components and in **every** Server Action via `requireAdmin()` / `requireCandidate()`. Hiding a nav item is presentation, never a control.                                                           |
+| Object-level access | A candidate's workspace re-verifies that the assignment is theirs _and_ that the question belongs to that interview. Anything else is a 404, not a 403 — existence does not leak.                                       |
+| User enumeration    | Login returns one message for unknown-email and wrong-password, and performs a dummy Argon2 verification on the unknown-email path so the timing matches. Account-inactive is only reported _after_ a correct password. |
+| Open redirect       | `?next=` is honoured only for same-origin absolute paths.                                                                                                                                                               |
+| Input validation    | Zod at every network boundary, server-side, before any database call.                                                                                                                                                   |
+| Secret exposure     | `server-only` on the server env module makes a browser import a build failure.                                                                                                                                          |
+| Candidate code      | Runs in the candidate's browser, in a worker with network APIs revoked. It cannot reach the server's environment, filesystem, database or internal network.                                                             |
+| XSS                 | Markdown is escaped before rendering; candidate source code and program output are rendered as text, never as HTML.                                                                                                     |
+| Headers             | `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy` set globally.                                                                                                                |
 
 **Known and accepted for the MVP:** test cases are visible to the candidate
 (see [the limitation](#the-limitation--read-this-before-running-a-real-interview)),
@@ -432,6 +447,7 @@ prisma/
   seed.ts, seed-data.ts    idempotent development seed
 public/
   workers/                 the two execution workers (plain JS, no bundler)
+  monaco/                  Monaco distribution, staged at build time (git-ignored)
 src/
   app/
     login/                 sign-in

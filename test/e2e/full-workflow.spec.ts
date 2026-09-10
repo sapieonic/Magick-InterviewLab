@@ -55,9 +55,7 @@ test('admin authors an interview, a candidate solves it, admin reviews the submi
   await test.step('admin creates an interview and adds the question', async () => {
     await page.goto('/admin/interviews/new');
     await page.getByLabel('Title', { exact: true }).fill(INTERVIEW_TITLE);
-    await page
-      .getByLabel('Description', { exact: true })
-      .fill('Automated end-to-end interview.');
+    await page.getByLabel('Description', { exact: true }).fill('Automated end-to-end interview.');
     await page.getByLabel('Status', { exact: true }).selectOption('PUBLISHED');
     await page.getByRole('button', { name: /create interview/i }).click();
 
@@ -174,10 +172,7 @@ async function addQuestionToInterview(page: Page, title: string): Promise<void> 
  * the option's value from the DOM and select by that instead.
  */
 async function selectOptionContaining(select: Locator, text: string): Promise<void> {
-  const value = await select
-    .locator('option', { hasText: text })
-    .first()
-    .getAttribute('value');
+  const value = await select.locator('option', { hasText: text }).first().getAttribute('value');
   if (!value) throw new Error(`No option containing "${text}"`);
   await select.selectOption(value);
 }

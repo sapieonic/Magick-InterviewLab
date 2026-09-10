@@ -25,7 +25,7 @@ export function AdminNav({ className }: { className?: string }) {
   return (
     <nav
       aria-label="Primary"
-      className={cn('scrollbar-thin flex items-center gap-0.5 overflow-x-auto', className)}
+      className={cn('flex scrollbar-thin items-center gap-0.5 overflow-x-auto', className)}
     >
       {LINKS.map((link) => {
         const active = link.exact
