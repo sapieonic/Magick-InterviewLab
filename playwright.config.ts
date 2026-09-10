@@ -4,6 +4,13 @@ const PORT = Number(process.env.E2E_PORT ?? 3100);
 const baseURL = process.env.E2E_BASE_URL ?? `http://127.0.0.1:${PORT}`;
 
 /**
+ * Locked-down build agents sometimes ship a Chromium that does not match the
+ * revision this Playwright version would download. Honour an explicit path so
+ * those environments can run the suite without a network fetch.
+ */
+const executablePath = process.env.E2E_CHROMIUM_PATH || undefined;
+
+/**
  * The end-to-end suite drives a real build against a real Postgres. It is
  * deliberately not part of `npm test` — see README "Testing".
  */
@@ -20,7 +27,12 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'], launchOptions: { executablePath } },
+    },
+  ],
   webServer: process.env.E2E_BASE_URL
     ? undefined
     : {

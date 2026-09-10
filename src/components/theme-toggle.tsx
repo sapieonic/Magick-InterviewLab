@@ -1,16 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { useTheme } from 'next-themes';
 import { Moon, Sun } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-  // The server cannot know the user's theme, so render the icon only after
-  // hydration — otherwise every load flashes the wrong glyph.
-  useEffect(() => setMounted(true), []);
 
   return (
     <Button
@@ -20,11 +15,14 @@ export function ThemeToggle() {
       title="Toggle theme"
       onClick={() => setTheme(resolvedTheme === 'dark' ? 'light' : 'dark')}
     >
-      {mounted && resolvedTheme === 'dark' ? (
-        <Sun className="size-4" />
-      ) : (
-        <Moon className="size-4" />
-      )}
+      {/*
+        The server cannot know the viewer's theme, so choosing an icon during
+        render would either mismatch on hydration or need a mount effect that
+        costs a second render. Rendering both and letting the `dark` class on
+        <html> pick one is free and never flashes.
+      */}
+      <Moon className="size-4 dark:hidden" aria-hidden />
+      <Sun className="hidden size-4 dark:block" aria-hidden />
     </Button>
   );
 }

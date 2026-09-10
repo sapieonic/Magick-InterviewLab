@@ -1,17 +1,31 @@
-import { dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { FlatCompat } from '@eslint/eslintrc';
+import coreWebVitals from 'eslint-config-next/core-web-vitals';
+import typescript from 'eslint-config-next/typescript';
 
-const compat = new FlatCompat({ baseDirectory: dirname(fileURLToPath(import.meta.url)) });
-
+/**
+ * Flat config. eslint-config-next 16 ships flat presets directly, so the
+ * FlatCompat shim that older Next projects use is not only unnecessary here,
+ * it crashes on the nested plugin objects.
+ */
 export default [
-  ...compat.extends('next/core-web-vitals', 'next/typescript'),
   {
-    ignores: ['.next/**', 'node_modules/**', 'src/generated/**', 'public/workers/**', 'test-results/**', 'playwright-report/**'],
+    ignores: [
+      '.next/**',
+      'node_modules/**',
+      'src/generated/**',
+      'public/workers/**',
+      'test-results/**',
+      'playwright-report/**',
+      'next-env.d.ts',
+    ],
   },
+  ...coreWebVitals,
+  ...typescript,
   {
     rules: {
-      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
       '@typescript-eslint/no-explicit-any': 'error',
     },
   },

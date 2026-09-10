@@ -1,1 +1,483 @@
-# Magick-InterviewLab
+<div align="center">
+
+<img src="public/magicvoice-logo.svg" alt="MagicVoice" width="56" height="56" />
+
+# MagicVoice InterviewLab
+
+**Internal technical-interview and coding-assessment platform.**
+
+<sub>Powered by MagicVoice</sub>
+
+</div>
+
+---
+
+InterviewLab is a single Next.js application that lets an admin author coding
+questions and test cases, assemble them into interviews, create candidate
+accounts, and review submissions — while candidates solve the questions in a
+browser IDE and run their code **entirely on their own machine**.
+
+- **Admin**: dashboard, candidate management, interview management, question
+  authoring with Markdown + live preview, test-case editor, submission review.
+- **Candidate**: assigned interview, Monaco editor, JavaScript and Python
+  execution in the browser, per-test results, explicit submit, scoring.
+- **Zero server-side code execution.** Candidate code never touches the
+  Node process, the database, or any secret. See
+  [Code execution](#code-execution) for exactly how, and for the limitation
+  that comes with it.
+
+## Contents
+
+- [Quick start](#quick-start)
+- [Environment variables](#environment-variables)
+- [The end-to-end workflow](#the-end-to-end-workflow)
+- [Code execution](#code-execution)
+- [Writing a question](#writing-a-question)
+- [Architecture](#architecture)
+- [Architecture decisions](#architecture-decisions)
+- [Security model](#security-model)
+- [Testing](#testing)
+- [Deployment](#deployment)
+- [Project layout](#project-layout)
+- [Future work](#future-work)
+
+---
+
+## Quick start
+
+**Requirements:** Node.js ≥ 20 (22 recommended) and a PostgreSQL 16 database.
+Docker is **not** required for local development.
+
+```bash
+git clone <this-repo> && cd Magick-InterviewLab
+npm install
+cp .env.example .env        # then edit DATABASE_URL and the admin settings
+npm run db:setup            # prisma generate + migrate deploy + seed
+npm run dev                 # http://localhost:3000
+```
+
+`npm run db:setup` prints the seeded credentials **once**. Nothing is
+hard-coded in the repository — see [Environment variables](#environment-variables).
+
+If you would rather bring your own Postgres via Docker but still run the app
+on the host:
+
+```bash
+docker compose up -d db
+```
+
+### Setting the admin password
+
+The bootstrap admin is configured entirely through the environment, and the
+recommended form is a hash rather than a plaintext password:
+
+```bash
+npm run hash-password -- 'a long passphrase you will remember'
+# → ADMIN_PASSWORD_HASH='$argon2id$v=19$m=19456,t=2,p=1$...'
+```
+
+Paste that into `.env` alongside `ADMIN_EMAIL`. The account is created on
+first sign-in (and by the seed) if it does not already exist. An existing
+admin is **never** silently re-hashed from the environment — rotating a live
+admin's password by editing an env var would be a takeover vector, so the
+bootstrap is create-only.
+
+`ADMIN_PASSWORD` (plaintext) is accepted as a development convenience and is
+**refused when `NODE_ENV=production`**.
+
+---
+
+## Environment variables
+
+Every variable, what it does, and whether it is required.
+
+| Variable | Required | Default | Exposed to browser | Purpose |
+| --- | --- | --- | --- | --- |
+| `DATABASE_URL` | **yes** | — | no | PostgreSQL connection string. |
+| `ADMIN_EMAIL` | recommended | — | no | Bootstrap admin's email. Without it no admin is created. |
+| `ADMIN_PASSWORD_HASH` | recommended | — | no | Argon2id hash for the bootstrap admin. Generate with `npm run hash-password`. |
+| `ADMIN_PASSWORD` | no | — | no | Plaintext alternative, **development only**; throws in production. |
+| `ADMIN_NAME` | no | `MagicVoice Admin` | no | Display name for the bootstrap admin. |
+| `SESSION_TTL_HOURS` | no | `12` | no | Session lifetime. |
+| `COOKIE_SECURE` | no | auto | no | Force the `Secure` cookie flag. Defaults to on when `NODE_ENV=production`. Set `true` when TLS terminates upstream in a non-production build. |
+| `SEED_CANDIDATE_EMAIL` | no | `candidate@magicvoice.local` | no | Email for the seeded demo candidate. |
+| `SEED_CANDIDATE_PASSWORD` | no | random | no | Password for the seeded candidate. If unset, one is generated and printed once. |
+| `SEED_DEMO_DATA` | no | `true` | no | Set `false` to seed only the admin. |
+| `NEXT_PUBLIC_APP_NAME` | no | `MagicVoice` | **yes** | Brand name in the UI. |
+| `NEXT_PUBLIC_APP_URL` | no | `http://localhost:3000` | **yes** | Canonical URL. |
+| `NEXT_PUBLIC_PYODIDE_INDEX_URL` | no | jsDelivr CDN | **yes** | Where the Python (Pyodide) runtime is fetched from. Point at your own host to run air-gapped. |
+| `PORT` | no | `3000` | no | Server port. |
+| `RUN_MIGRATIONS` | no | `true` | no | Docker entrypoint only: run `prisma migrate deploy` on container start. |
+
+Only `NEXT_PUBLIC_*` variables reach the browser. This is enforced structurally,
+not by convention: `src/lib/env.server.ts` imports `server-only`, so importing
+it from a Client Component is a **build error**, while the browser-safe values
+live in `src/lib/env.ts`.
+
+---
+
+## The end-to-end workflow
+
+This is the flow the product is built around, and the one the
+[end-to-end test](#testing) exercises on every CI run.
+
+1. Admin signs in with the environment-configured credentials.
+2. Admin creates an interview — *Frontend Engineer Interview*.
+3. Admin creates questions — *Reverse a String*, *Two Sum*, *Find the Duplicate*.
+4. Admin adds test cases to each question (input, expected output, weight).
+5. Admin adds the questions to the interview and orders them.
+6. Admin creates a candidate with an explicitly chosen temporary password.
+7. Admin assigns the interview to the candidate.
+8. Candidate signs in and is required to choose a new password.
+9. Candidate opens a question, writes JavaScript or Python.
+10. Candidate clicks **Run tests** — the code executes in their browser.
+11. Results appear per test; a failure expands to show input / expected / actual.
+12. Candidate clicks **Submit**.
+13. Admin reviews the submission, its score and its per-test breakdown.
+
+The seed puts steps 2–7 in place already so you can jump straight to step 8.
+
+---
+
+## Code execution
+
+**Candidate code never runs on the server.** No `eval`, no `child_process`, no
+`exec`/`spawn`, no Python subprocess, no per-submission container. This is a
+deliberate architectural constraint, not an optimisation: the Node process
+holds the database credentials, the session secrets and the whole tenant's
+data, and no amount of care makes running arbitrary candidate code next to
+that a good idea.
+
+### The execution contract
+
+Programs are **stdin → stdout**. A test case supplies an `input` string on
+standard input and the program's trimmed standard output is compared against
+`expectedOutput`. That contract is language-agnostic, deterministic, and maps
+one-to-one onto a future server-side sandbox — which is the point.
+
+| | JavaScript | Python |
+| --- | --- | --- |
+| Runtime | Web Worker (isolated realm) | Pyodide (CPython → WebAssembly) in a Web Worker |
+| Reading input | `readLine()`, `readAll()`, `input()` | `input()`, `sys.stdin.read()` |
+| Writing output | `console.log` | `print()` |
+| Loaded | immediately (tiny) | lazily, on first Python run |
+| Hard timeout | `worker.terminate()` | `worker.terminate()` + re-init |
+
+Both runtimes are behind one interface, so the UI has no idea which is which:
+
+```ts
+interface CodeExecutor {
+  readonly language: Language;
+  warmUp?(): Promise<void>;
+  execute(request: ExecutionRequest): Promise<ExecutionResult>;
+  dispose(): void;
+}
+```
+
+Swapping in a `RemoteSandboxExecutor` later means changing one registry
+function (`getExecutor`) and nothing in the UI.
+
+### The limitation — read this before running a real interview
+
+Because the tests execute in the candidate's browser, **the tests are visible
+to the candidate.** A technically sophisticated candidate can open developer
+tools and read every test input and expected output. Test cases are shipped to
+the client because they have to be.
+
+The product does not pretend otherwise:
+
+- `TestCase.isHidden` exists in the schema and is **always false in the MVP**.
+- Scores are recomputed **on the server** from the authoritative test weights,
+  so a tampered payload cannot invent a 100% out of results that say otherwise.
+  It can still lie about *which* tests passed. That is the honest boundary.
+- Closing it properly requires the second executor —
+  see [Future work](#future-work).
+
+Use InterviewLab as a *live, observed* interview tool or an *unproctored
+screen where the code is read by a human*, not as an unsupervised
+pass/fail gate.
+
+### Browser requirements
+
+Execution needs WebAssembly and Web Workers. The workspace probes for both up
+front (`detectRuntimeCapabilities()`); if either is missing, **Run tests** is
+disabled with an explanation instead of failing silently. Pyodide failing to
+download (offline, blocked CDN, corporate proxy) surfaces as a specific error,
+and every run is wrapped in a hard timeout that terminates the worker — so the
+UI never sits on a permanent "Running…".
+
+---
+
+## Writing a question
+
+A question is Markdown plus a set of test cases. Keep to the stdin/stdout
+contract and the same question works in both languages and, later, on the
+remote executor.
+
+```
+Title:            Two Sum
+Difficulty:       MEDIUM
+Languages:        JavaScript, Python
+Time limit:       5000 ms
+
+Test case 1
+  Input:            2 7 11 15
+                    9
+  Expected output:  0 1
+  Weight:           1
+```
+
+Output comparison normalises line endings and trailing whitespace, and falls
+back to numeric (epsilon) and structural-JSON comparison, so `[1, 2]` matches
+`[1,2]` and `3.0000000001` matches `3`. Exact string equality is tried first.
+
+---
+
+## Architecture
+
+One Next.js application. No microservices.
+
+```
+Browser                          Server (Next.js)              Postgres
+┌──────────────────────┐         ┌────────────────────┐       ┌─────────┐
+│ Admin console (RSC)  │◀───────▶│ Server Components  │◀─────▶│ Prisma  │
+│ Candidate workspace  │         │ Server Actions     │       └─────────┘
+│                      │         │  ├ requireAdmin()  │
+│  ┌────────────────┐  │         │  ├ requireCandidate│
+│  │ Monaco editor  │  │         │  └ Zod validation  │
+│  └────────────────┘  │         │ Session (HttpOnly) │
+│  ┌────────────────┐  │         └────────────────────┘
+│  │ Web Worker: JS │  │
+│  │ Web Worker: Py │  │   ← candidate code lives and dies here
+│  └────────────────┘  │
+└──────────────────────┘
+```
+
+Data flows one way: Server Components read through Prisma, Client Components
+mutate through Server Actions, and every action re-authorises server-side
+before it touches a row.
+
+---
+
+## Architecture decisions
+
+Where the implementation departs from the original brief, and why.
+
+### WebContainers were rejected in favour of a plain Web Worker for JavaScript
+
+The brief suggested WebContainers. We use a hardened Web Worker instead, for
+three reasons that compound:
+
+1. **Cross-origin isolation is a hard conflict.** WebContainers require
+   `Cross-Origin-Opener-Policy: same-origin` and
+   `Cross-Origin-Embedder-Policy: require-corp` on every response. That same
+   header pair blocks the CDN-delivered Pyodide assets unless every one of
+   them carries `Cross-Origin-Resource-Policy`. Adopting WebContainers for
+   JavaScript would therefore have broken Python, and self-hosting the entire
+   Pyodide distribution to work around it is a large amount of infrastructure
+   for an MVP.
+2. **Licensing.** The WebContainer API requires registration and a commercial
+   licence for use outside StackBlitz-hosted origins. That is a procurement
+   dependency in the critical path of an internal tool.
+3. **It buys nothing here.** WebContainers exist to run a *Node project* —
+   npm installs, a dev server, a filesystem. Our contract is
+   "one file, stdin in, stdout out". A Worker already gives us a realm with no
+   DOM, no cookies, no `localStorage`, and — critically — `terminate()`, which
+   is the only reliable way to stop an infinite loop.
+
+The worker additionally revokes `fetch`, `XMLHttpRequest`, `WebSocket`,
+`importScripts`, `indexedDB` and `caches` before user code runs, so a
+candidate program cannot call home or reach internal services from the
+reviewer's browser.
+
+Pyodide is used for Python exactly as the brief specified.
+
+### Prisma 7 with the `pg` driver adapter
+
+Prisma 7 removed `url` from the schema's datasource block; the connection
+string now lives in `prisma.config.ts` and the client is constructed with an
+explicit `PrismaPg` adapter. This is the current supported shape, not a
+workaround.
+
+### Sessions are database rows, not JWTs
+
+The cookie carries a 256-bit random token; the database stores only its
+SHA-256. This costs one indexed lookup per request and buys **revocation**:
+deactivating a candidate or resetting their password kills their live sessions
+immediately. A stateless JWT could not do that without a denylist, which is a
+session table with extra steps.
+
+### Scoring is recomputed server-side
+
+The browser is the only thing that *can* report which tests passed, but it is
+not trusted to report a score. `scoreSubmission()` takes the authoritative
+`TestCase` weights from the database and ignores anything weight-shaped in the
+client payload. Results for test ids that do not belong to the question are
+discarded rather than counted.
+
+### Server Actions rather than a REST API
+
+Mutations are Server Actions wrapped in a single `actionGuard`, which turns
+expected failures into typed `{ ok: false, error }` results and logs anything
+unexpected server-side rather than leaking a stack trace to the browser. There
+is no public API surface to secure separately, and no client-side data-fetching
+layer to keep in sync.
+
+### Native `<select>` over a headless listbox
+
+Keyboard and screen-reader behaviour for free, works in a plain form POST, and
+this application never needs rich option rendering.
+
+---
+
+## Security model
+
+| Concern | Control |
+| --- | --- |
+| Password storage | Argon2id (19 MiB, t=2, p=1 — OWASP baseline). Plaintext is never stored, logged, or returned. |
+| Session | 256-bit opaque token in an `HttpOnly`, `SameSite=Lax`, `Secure`-in-production cookie. Only the SHA-256 is stored. |
+| Revocation | Password change, admin reset and deactivation all delete every session for that user. |
+| Authorization | Enforced in Server Components and in **every** Server Action via `requireAdmin()` / `requireCandidate()`. Hiding a nav item is presentation, never a control. |
+| Object-level access | A candidate's workspace re-verifies that the assignment is theirs *and* that the question belongs to that interview. Anything else is a 404, not a 403 — existence does not leak. |
+| User enumeration | Login returns one message for unknown-email and wrong-password, and performs a dummy Argon2 verification on the unknown-email path so the timing matches. Account-inactive is only reported *after* a correct password. |
+| Open redirect | `?next=` is honoured only for same-origin absolute paths. |
+| Input validation | Zod at every network boundary, server-side, before any database call. |
+| Secret exposure | `server-only` on the server env module makes a browser import a build failure. |
+| Candidate code | Runs in the candidate's browser, in a worker with network APIs revoked. It cannot reach the server's environment, filesystem, database or internal network. |
+| XSS | Markdown is escaped before rendering; candidate source code and program output are rendered as text, never as HTML. |
+| Headers | `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy` set globally. |
+
+**Known and accepted for the MVP:** test cases are visible to the candidate
+(see [the limitation](#the-limitation--read-this-before-running-a-real-interview)),
+and there is no rate limiting on the login endpoint — put the app behind your
+existing reverse proxy or WAF if it is internet-facing.
+
+---
+
+## Testing
+
+```bash
+npm run typecheck     # tsc --noEmit, strict
+npm run lint          # eslint (next/core-web-vitals + typescript)
+npm run format:check  # prettier
+npm test              # vitest — unit and integration
+npm run test:e2e      # playwright — full workflow against a real build
+```
+
+Unit tests cover authentication (hashing, session token handling, login
+enumeration resistance), authorization guards, validation schemas, scoring
+(including the anti-tamper properties), and both execution adapters via an
+injected fake worker.
+
+The end-to-end suite drives the entire admin → candidate → admin workflow in
+a real Chromium against a real build and a real database: sign in as admin,
+create an interview, create a question, add test cases, create a candidate,
+assign, sign in as the candidate, write JavaScript, run it in the browser,
+submit, and confirm the admin sees the submission and its score.
+
+E2E prerequisites: a reachable `DATABASE_URL`, `npm run build` completed, and
+`npx playwright install chromium`. Playwright starts the server itself on port
+3100 (override with `E2E_PORT`, or point at an already-running instance with
+`E2E_BASE_URL`).
+
+---
+
+## Deployment
+
+The application is a standard Next.js server (`output: 'standalone'`) with one
+dependency: PostgreSQL. It is not tied to any hosting provider.
+
+### Docker Compose (app + database)
+
+```bash
+cp .env.example .env      # set ADMIN_EMAIL and ADMIN_PASSWORD_HASH
+docker compose up --build
+```
+
+Migrations run automatically on container start (set `RUN_MIGRATIONS=false` to
+opt out). To load the demo content:
+
+```bash
+docker compose exec app npm run db:seed
+```
+
+### Any Node host / cloud VM
+
+```bash
+npm ci
+npm run build
+npx prisma migrate deploy
+npm start
+```
+
+Set `DATABASE_URL`, `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH` and
+`NEXT_PUBLIC_APP_URL` in the environment. `SESSION_TTL_HOURS` and
+`COOKIE_SECURE` are the two knobs worth reviewing.
+
+### Vercel
+
+Works as-is. Add the same environment variables in the project settings and
+point `DATABASE_URL` at a managed Postgres. Run `prisma migrate deploy` as
+part of your release step — the build itself does not migrate, deliberately,
+so a preview deployment cannot mutate a shared database.
+
+---
+
+## Project layout
+
+```
+prisma/
+  schema.prisma            data model
+  migrations/              generated SQL migrations
+  seed.ts, seed-data.ts    idempotent development seed
+public/
+  workers/                 the two execution workers (plain JS, no bundler)
+src/
+  app/
+    login/                 sign-in
+    change-password/       forced first-login password change
+    admin/                 admin console
+    interview/             candidate workspace
+  components/
+    ui/                    design-system primitives
+    admin/                 admin-only composites
+    workspace/             candidate workspace composites
+  features/
+    auth/                  password, session, guards, bootstrap, actions
+    candidates/            admin CRUD for candidates
+    interviews/            admin CRUD for interviews
+    questions/             admin CRUD for questions + test cases
+    submissions/           submission creation, drafts, scoring
+    execution/             CodeExecutor abstraction + JS/Python adapters
+    dashboard/             dashboard aggregates
+  lib/
+    db/                    Prisma client singleton
+    validation/            Zod schemas
+    env.ts / env.server.ts browser-safe vs server-only configuration
+test/
+  unit/                    vitest
+  e2e/                     playwright
+```
+
+The execution engine is the one part deliberately isolated behind an
+interface, because it is the one part expected to move out of this process.
+
+---
+
+## Future work
+
+Designed for, not built:
+
+- **`RemoteSandboxExecutor`** — the same `CodeExecutor` interface, backed by an
+  isolated execution service. This is what makes `TestCase.isHidden` real and
+  closes the MVP's visibility limitation.
+- Additional languages (C, C++, Java, Go, Rust) — a new executor, no UI change.
+- Hidden tests, partial credit, custom graders — the `Grader` interface exists.
+- AI-assisted evaluation, question banks, randomisation, organisations/tenants,
+  invitation and password-reset email, proctoring, plagiarism detection.
+
+None of these are stubbed. The seams are there; the code is not.
+
+---
+
+<div align="center"><sub>Powered by MagicVoice</sub></div>
