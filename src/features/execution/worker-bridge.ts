@@ -250,13 +250,23 @@ export class WorkerBridge {
 }
 
 /**
- * The real browser factory. Classic (not module) workers on purpose: the
- * Python runner calls `importScripts()` to pull in Pyodide, which module
- * workers forbid.
+ * The real browser factory.
+ *
+ * The worker `type` is per-runner and load-bearing. The JavaScript runner is
+ * classic: it has no imports and nothing to gain from a module. The Python
+ * runner must be a module — Pyodide 314 refuses to initialise in a classic
+ * worker outright ("Classic web workers are not supported") and its loader is
+ * only reachable as an ES module. Getting this wrong fails at runtime, in the
+ * browser, several seconds into a candidate's first Python run, so it is
+ * spelled out at each call site rather than defaulted.
  *
  * This function is also the type-level assertion that a DOM `Worker` satisfies
  * `WorkerLike` — if that ever stops being true, this line stops compiling.
  */
-export function defaultWorkerFactory(scriptUrl: string, name: string): WorkerFactory {
-  return () => new Worker(scriptUrl, { type: 'classic', name });
+export function defaultWorkerFactory(
+  scriptUrl: string,
+  name: string,
+  type: WorkerType = 'classic',
+): WorkerFactory {
+  return () => new Worker(scriptUrl, { type, name });
 }

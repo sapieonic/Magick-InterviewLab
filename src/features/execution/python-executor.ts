@@ -74,7 +74,8 @@ export class PythonExecutor implements CodeExecutor {
     this.#indexUrl = options.indexUrl ?? pyodideIndexUrl();
     this.#initTimeoutMs = options.initTimeoutMs ?? DEFAULT_INIT_TIMEOUT_MS;
     this.#bridge = new WorkerBridge(
-      options.workerFactory ?? defaultWorkerFactory(PY_WORKER_URL, 'interviewlab-py-runner'),
+      options.workerFactory ??
+        defaultWorkerFactory(PY_WORKER_URL, 'interviewlab-py-runner', 'module'),
     );
   }
 

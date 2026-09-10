@@ -1,8 +1,12 @@
 /**
  * Python candidate-code runner, backed by Pyodide (CPython compiled to WASM).
- * Plain ES2020, no imports, served verbatim from /public as a *classic* worker
- * — module workers cannot call `importScripts()`, which is how Pyodide's
- * loader is fetched.
+ * Plain ES2020, served verbatim from /public as a *module* worker.
+ *
+ * Module, not classic, and not by preference: Pyodide 314 refuses to
+ * initialise in a classic worker at all ("Classic web workers are not
+ * supported"), and its loader ships as an ES module. The runtime URL is
+ * configurable, so the import has to be dynamic rather than a static
+ * `import` — which module workers allow and classic workers do not.
  *
  * ## Why init is a separate message
  *
@@ -126,8 +130,11 @@
 
     initPromise = (async function () {
       var indexUrl = withTrailingSlash(indexUrlRaw);
+      var moduleUrl = new URL(indexUrl + 'pyodide.mjs', self.location.href).href;
+
+      var loaderModule;
       try {
-        self.importScripts(indexUrl + 'pyodide.js');
+        loaderModule = await import(moduleUrl);
       } catch (err) {
         throw new Error(
           'Could not download the Python runtime from ' +
@@ -139,13 +146,12 @@
         );
       }
 
-      if (typeof self.loadPyodide !== 'function') {
-        throw new Error(
-          'The script at ' + indexUrl + 'pyodide.js did not define loadPyodide().',
-        );
+      var loadPyodide = loaderModule && loaderModule.loadPyodide;
+      if (typeof loadPyodide !== 'function') {
+        throw new Error('The script at ' + moduleUrl + ' did not export loadPyodide().');
       }
 
-      pyodide = await self.loadPyodide({ indexURL: indexUrl });
+      pyodide = await loadPyodide({ indexURL: indexUrl });
       pyodide.runPython(HARNESS);
       pyRun = pyodide.globals.get('_mvil_run');
       if (!pyRun) throw new Error('The Python harness failed to install.');
