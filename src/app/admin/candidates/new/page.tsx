@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { requireAdminPage } from '@/features/auth/guards';
 import { listAssignableInterviews } from '@/features/candidates/queries';
 import { CandidateCreateForm } from '@/components/admin/candidate-forms';
 import { PageHeader } from '@/components/admin/page-header';
@@ -7,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card';
 export const metadata: Metadata = { title: 'New candidate' };
 
 export default async function NewCandidatePage() {
+  await requireAdminPage();
   const interviews = await listAssignableInterviews();
 
   return (

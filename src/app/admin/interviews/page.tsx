@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { requireAdminPage } from '@/features/auth/guards';
 import Link from 'next/link';
 import { ClipboardList, Plus } from 'lucide-react';
 import { listInterviews } from '@/features/interviews/queries';
@@ -19,6 +20,7 @@ import { formatDate } from '@/lib/utils';
 export const metadata: Metadata = { title: 'Interviews' };
 
 export default async function InterviewsPage() {
+  await requireAdminPage();
   const interviews = await listInterviews();
 
   return (

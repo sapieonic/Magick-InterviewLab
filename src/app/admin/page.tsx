@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { requireAdminPage } from '@/features/auth/guards';
 import Link from 'next/link';
 import { Activity, FileCode2, LogIn, UserCheck, Users } from 'lucide-react';
 import { getDashboardStats, getRecentActivity } from '@/features/dashboard/queries';
@@ -36,6 +37,7 @@ function StatTile({
 }
 
 export default async function AdminDashboardPage() {
+  await requireAdminPage();
   const [stats, activity] = await Promise.all([getDashboardStats(), getRecentActivity(10)]);
 
   return (
