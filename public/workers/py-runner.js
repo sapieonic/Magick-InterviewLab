@@ -109,6 +109,49 @@
     '',
   ].join('\n');
 
+  /**
+   * Revoke the network / storage surfaces on the worker global. Called once,
+   * after Pyodide has loaded. `postMessage` and `close` are intentionally
+   * excluded (the worker needs them). Each write is best-effort: a frozen host
+   * property is left as-is rather than throwing during init.
+   */
+  function hardenGlobalScope() {
+    var blockedCallables = [
+      'fetch',
+      'XMLHttpRequest',
+      'WebSocket',
+      'EventSource',
+      'BroadcastChannel',
+    ];
+    var blockedValues = ['indexedDB', 'caches', 'localStorage', 'sessionStorage'];
+
+    function define(name, value) {
+      try {
+        Object.defineProperty(self, name, {
+          value: value,
+          writable: true,
+          configurable: true,
+          enumerable: false,
+        });
+      } catch (e) {
+        try {
+          self[name] = value;
+        } catch (e2) {
+          /* Frozen host object: best effort. */
+        }
+      }
+    }
+
+    for (var i = 0; i < blockedCallables.length; i++) {
+      (function (name) {
+        define(name, function () {
+          throw new Error("'" + name + "' is disabled in the InterviewLab sandbox.");
+        });
+      })(blockedCallables[i]);
+    }
+    for (var j = 0; j < blockedValues.length; j++) define(blockedValues[j], undefined);
+  }
+
   function nowMs() {
     return typeof performance !== 'undefined' && typeof performance.now === 'function'
       ? performance.now()
@@ -155,6 +198,18 @@
       pyodide.runPython(HARNESS);
       pyRun = pyodide.globals.get('_mvil_run');
       if (!pyRun) throw new Error('The Python harness failed to install.');
+
+      // Only now, after the ~10MB runtime has finished downloading, revoke the
+      // network surfaces — Pyodide needs `fetch` to load, and the candidate's
+      // code runs strictly afterwards. Pyodide's `js` module proxies this
+      // worker's global scope, so `import js; js.fetch(...)` resolves to
+      // `self.fetch`; removing it here closes that bridge. `postMessage` and
+      // `close` are deliberately NOT touched — this worker replies to the host
+      // through `self.postMessage`. This mirrors the JavaScript runner and, as
+      // documented there and in the README, hardens the honest-mistake path; it
+      // is not a security boundary (a determined candidate sees the test cases
+      // regardless, since execution is in their own browser).
+      hardenGlobalScope();
     })();
 
     // A failed init must not be cached as a permanently rejected promise —
