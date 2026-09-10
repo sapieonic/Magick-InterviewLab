@@ -356,13 +356,36 @@ describe('py-runner.js source contract', () => {
     'utf8',
   );
 
-  it('is plain script code with no ES module syntax (classic workers only)', () => {
+  /**
+   * Pyodide 314 refuses to initialise in a classic worker ("Classic web
+   * workers are not supported") and ships its loader only as an ES module,
+   * so this runner is a *module* worker. It still must not use a top-level
+   * static import: the runtime URL is configurable at runtime, so the loader
+   * has to be pulled in dynamically. Both halves are pinned here because the
+   * failure is invisible until Pyodide actually boots in a browser.
+   */
+  it('has no top-level static import or export', () => {
     expect(source).not.toMatch(/^\s*import\s+[\w{*]/m);
     expect(source).not.toMatch(/^\s*export\s/m);
   });
 
-  it('loads Pyodide with importScripts and caches it', () => {
-    expect(source).toContain('importScripts');
+  /**
+   * The worker script being a module is only half of it — the host has to
+   * create it as one. Tests inject a fake factory, so nothing else in this
+   * suite would notice `defaultWorkerFactory` losing the 'module' argument.
+   */
+  it('is created as a module worker by the executor', () => {
+    const executorSource = readFileSync(
+      new URL('../../../src/features/execution/python-executor.ts', import.meta.url),
+      'utf8',
+    );
+    expect(executorSource).toMatch(/defaultWorkerFactory\([^)]*'module'\s*,?\s*\)/s);
+  });
+
+  it('loads Pyodide by dynamic module import, never importScripts', () => {
+    expect(source).not.toContain('importScripts');
+    expect(source).toContain('pyodide.mjs');
+    expect(source).toContain('await import(moduleUrl)');
     expect(source).toContain('loadPyodide');
     expect(source).toContain('indexURL');
   });

@@ -13,8 +13,10 @@ const config = [
       'node_modules/**',
       'src/generated/**',
       'public/workers/**',
-      // Vendored Monaco distribution, staged by scripts/copy-monaco.mjs.
+      // Vendored runtimes, staged by scripts/copy-monaco.mjs and
+      // scripts/fetch-pyodide.mjs. Not our source; not ours to lint.
       'public/monaco/**',
+      'public/pyodide/**',
       'test-results/**',
       'playwright-report/**',
       'next-env.d.ts',
