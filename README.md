@@ -400,6 +400,11 @@ E2E prerequisites: a reachable `DATABASE_URL`, `npm run build` completed, and
 3100 (override with `E2E_PORT`, or point at an already-running instance with
 `E2E_BASE_URL`).
 
+The Python spec boots real Pyodide, so it needs the runtime to be reachable.
+Run `npm run fetch:pyodide` and set `NEXT_PUBLIC_PYODIDE_INDEX_URL="/pyodide/"`
+before building if your network blocks the CDN — CI does exactly that, so a
+jsDelivr blip cannot fail a build for a reason unrelated to the change.
+
 ---
 
 ## Deployment

@@ -100,6 +100,14 @@ jobs:
       NEXT_PUBLIC_APP_URL: http://127.0.0.1:3100
       NEXT_PUBLIC_APP_NAME: MagicVoice
 
+      # Self-hosted, not the CDN default. `python-execution.spec.ts` boots
+      # real Pyodide, so with the default URL a jsDelivr blip fails the build
+      # for a reason that has nothing to do with the change under test — the
+      # Python suite would double as a CDN uptime check. Staged by the step
+      # below; NEXT_PUBLIC_* is inlined at build time, so it must be set
+      # before `npm run build`.
+      NEXT_PUBLIC_PYODIDE_INDEX_URL: /pyodide/
+
     steps:
       - uses: actions/checkout@v4
 
@@ -135,6 +143,9 @@ jobs:
 
       - name: Seed
         run: npm run db:seed
+
+      - name: Stage the Pyodide runtime for self-hosting
+        run: npm run fetch:pyodide
 
       - name: Build
         run: npm run build
