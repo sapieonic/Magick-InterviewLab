@@ -36,14 +36,21 @@ const TABLE_DELIMITER = /^[ \t]*\|?[ \t]*:?-{1,}:?[ \t]*(\|[ \t]*:?-{1,}:?[ \t]*
  * covers the string. Group order is the precedence order: code spans win over
  * everything (so `**` inside backticks stays literal), then links, then bold,
  * then italic.
+ *
+ * The underscore forms carry a word-boundary guard that the asterisk forms do
+ * not need, and CommonMark forbids intraword `_` emphasis for exactly the
+ * reason it matters here: this is a *coding* interview product. Without the
+ * guard, a description mentioning `max_value`, `__init__` or `MY_CONST`
+ * renders with the identifier chopped up and the underscores eaten — which is
+ * both wrong and confusing when the identifier is the thing being discussed.
  */
 const INLINE_SOURCE = [
   '`([^`\\n]+)`', // 1: code
   '\\[([^\\]\\n]*)\\]\\(([^()\\s]*)\\)', // 2: link text, 3: href
   '\\*\\*([\\s\\S]+?)\\*\\*', // 4: **bold**
-  '__([^_]+?)__', // 5: __bold__
+  '(?<![\\w`])__([^_]+?)__(?![\\w`])', // 5: __bold__, not intraword
   '\\*([^*\\n]+?)\\*', // 6: *italic*
-  '_([^_\\n]+?)_', // 7: _italic_
+  '(?<![\\w`])_([^_\\n]+?)_(?![\\w`])', // 7: _italic_, not intraword
 ].join('|');
 
 const SAFE_PROTOCOL = /^(?:https?:|mailto:)/i;

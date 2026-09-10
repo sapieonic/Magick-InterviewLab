@@ -19,5 +19,3 @@ export function ok<T>(data?: T): ActionResult<T | undefined> {
 export function fail(error: string, fieldErrors?: Record<string, string[]>): ActionResult<never> {
   return { ok: false, error, fieldErrors };
 }
-
-export const IDLE: ActionResult<never> | null = null;

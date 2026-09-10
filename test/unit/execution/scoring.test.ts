@@ -30,7 +30,18 @@ describe('normalizeWeight', () => {
   it('keeps sensible weights as they are', () => {
     expect(normalizeWeight(1)).toBe(1);
     expect(normalizeWeight(3)).toBe(3);
-    expect(normalizeWeight(2.5)).toBe(2.5);
+  });
+
+  /**
+   * Must match the server's authoritative `scoreSubmission` exactly. The two
+   * used to disagree on fractional weights — this one kept 2.5, the server
+   * floored it to 2 — so a candidate could be shown a score the transcript
+   * would not record. The column is an Int today, which is the only reason
+   * that never bit.
+   */
+  it('floors a fractional weight, agreeing with the server-side scorer', () => {
+    expect(normalizeWeight(2.5)).toBe(2);
+    expect(normalizeWeight(1.9)).toBe(1);
   });
 
   it('floors anything below 1 — including the values a bad admin form produces', () => {

@@ -5,12 +5,13 @@ import { redirect } from 'next/navigation';
 import { headers } from 'next/headers';
 import { prisma } from '@/lib/db/prisma';
 import { actionGuard, AppError } from '@/lib/errors';
-import { ok, type ActionResult } from '@/lib/action-result';
+import type { ActionResult } from '@/lib/action-result';
 import { changePasswordSchema, loginSchema } from '@/lib/validation/schemas';
 import { hashPassword, verifyPassword } from './password';
 import { createSession, destroyAllSessionsFor, destroySession } from './session';
 import { homePathFor, requireUser } from './guards';
 import { ensureBootstrapAdmin } from './bootstrap';
+import { safeRedirect } from './safe-redirect';
 
 /**
  * A deliberately expensive no-op used when the account does not exist, so the
@@ -112,18 +113,4 @@ export async function changePasswordAction(
     redirect(homePathFor({ role: user.role, mustChangePassword: false }));
   });
   return result.ok ? null : result;
-}
-
-/** Only same-origin absolute paths — never an attacker-supplied URL. */
-function safeRedirect(next: string | undefined): string | null {
-  if (!next) return null;
-  if (!next.startsWith('/') || next.startsWith('//')) return null;
-  return next;
-}
-
-export async function bootstrapAdminAction(): Promise<ActionResult<undefined>> {
-  return actionGuard(async () => {
-    await ensureBootstrapAdmin();
-    return ok();
-  });
 }

@@ -43,7 +43,3 @@ export function runMatches(state: RunState, language: Language, sourceCode: stri
     state.phase === 'complete' && state.language === language && state.sourceCode === sourceCode
   );
 }
-
-export function resultOf(state: RunState): ExecutionResult | null {
-  return state.phase === 'complete' ? state.result : null;
-}

@@ -26,20 +26,10 @@ export const LANGUAGE_LABEL = {
   python: 'Python',
 } as const satisfies Record<RuntimeLanguage, string>;
 
-/** Short label for the language toggle, where horizontal space is scarce. */
-export const LANGUAGE_SHORT_LABEL = {
-  javascript: 'JS',
-  python: 'Py',
-} as const satisfies Record<RuntimeLanguage, string>;
-
 export function toRuntimeLanguage(language: DbLanguage): RuntimeLanguage {
   return DB_TO_RUNTIME_LANGUAGE[language];
 }
 
 export function toDbLanguage(language: RuntimeLanguage): DbLanguage {
   return RUNTIME_TO_DB_LANGUAGE[language];
-}
-
-export function isRuntimeLanguage(value: string): value is RuntimeLanguage {
-  return value === 'javascript' || value === 'python';
 }

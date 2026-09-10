@@ -42,20 +42,21 @@ enum AssignmentStatus {
 /// A person who can sign in. Admins are bootstrapped from env; candidates are
 /// created by an admin with an explicitly chosen temporary password.
 model User {
-  id                 String   @id @default(cuid())
+  id                 String    @id @default(cuid())
   name               String
-  email              String   @unique
+  email              String    @unique
   passwordHash       String
-  role               Role     @default(CANDIDATE)
-  isActive           Boolean  @default(true)
-  mustChangePassword Boolean  @default(false)
+  role               Role      @default(CANDIDATE)
+  isActive           Boolean   @default(true)
+  mustChangePassword Boolean   @default(false)
   lastLoginAt        DateTime?
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   sessions    Session[]
   assignments InterviewAssignment[]
   submissions Submission[]
+  codeDrafts  CodeDraft[]
 
   @@index([role])
   @@index([isActive])
@@ -80,16 +81,16 @@ model Session {
 }
 
 model Interview {
-  id             String          @id @default(cuid())
-  title          String
-  description    String          @default("")
-  status         InterviewStatus @default(DRAFT)
+  id                       String          @id @default(cuid())
+  title                    String
+  description              String          @default("")
+  status                   InterviewStatus @default(DRAFT)
   /// Total wall-clock budget in minutes. Null = untimed.
-  durationMinutes Int?
+  durationMinutes          Int?
   /// When false, a candidate may only submit once per question.
-  allowMultipleSubmissions Boolean @default(true)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  allowMultipleSubmissions Boolean         @default(true)
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
 
   questions   InterviewQuestion[]
   assignments InterviewAssignment[]
@@ -100,25 +101,26 @@ model Interview {
 }
 
 model Question {
-  id          String     @id @default(cuid())
-  title       String
+  id                 String     @id @default(cuid())
+  title              String
   /// Markdown.
-  description String     @default("")
-  difficulty  Difficulty @default(EASY)
+  description        String     @default("")
+  difficulty         Difficulty @default(EASY)
   /// Subset of Language this question may be solved in.
   supportedLanguages Language[] @default([JAVASCRIPT, PYTHON])
   /// Per-language starter code, keyed by lowercase language id.
-  starterCode Json       @default("{}")
+  starterCode        Json       @default("{}")
   /// Per-test wall-clock limit in milliseconds.
-  timeLimitMs Int        @default(5000)
+  timeLimitMs        Int        @default(5000)
   /// Advisory only in the MVP (browser execution cannot enforce it).
-  memoryLimitMb Int      @default(128)
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  memoryLimitMb      Int        @default(128)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
 
-  testCases  TestCase[]
-  interviews InterviewQuestion[]
+  testCases   TestCase[]
+  interviews  InterviewQuestion[]
   submissions Submission[]
+  codeDrafts  CodeDraft[]
 
   @@index([difficulty])
   @@map("questions")
@@ -139,18 +141,18 @@ model InterviewQuestion {
 }
 
 model TestCase {
-  id          String  @id @default(cuid())
-  questionId  String
+  id             String  @id @default(cuid())
+  questionId     String
   /// Fed to the program on stdin.
-  input       String  @default("")
+  input          String  @default("")
   /// Compared against trimmed stdout.
-  expectedOutput String @default("")
-  description String  @default("")
-  weight      Int     @default(1)
+  expectedOutput String  @default("")
+  description    String  @default("")
+  weight         Int     @default(1)
   /// Reserved for the future remote executor; always false in the MVP because
   /// browser execution cannot keep a test secret. See README.
-  isHidden    Boolean @default(false)
-  position    Int     @default(0)
+  isHidden       Boolean @default(false)
+  position       Int     @default(0)
 
   question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
 
@@ -211,6 +213,13 @@ model CodeDraft {
   sourceCode  String
   updatedAt   DateTime @updatedAt
 
+  /// Real foreign keys, not bare ids. Without them a deleted candidate or
+  /// question left its drafts behind forever — and it did: three orphaned
+  /// rows accumulated from test runs before this was caught.
+  candidate User     @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  question  Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
   @@unique([candidateId, questionId, language])
+  @@index([questionId])
   @@map("code_drafts")
 }

@@ -70,6 +70,13 @@ export function MobileWorkspace({
         </CardContent>
       </Card>
 
+      {/*
+        `recorded` and `run` look unreachable here — a phone can never start a
+        run — but `isDesktop` in the parent is a live matchMedia subscription,
+        so narrowing a desktop window (or rotating a tablet) after a run swaps
+        this component in with that state already populated. Losing the
+        results at that moment would read as a crash.
+      */}
       {recorded ? (
         <Card>
           <CardHeader>

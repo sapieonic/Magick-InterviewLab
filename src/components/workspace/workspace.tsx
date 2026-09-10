@@ -207,6 +207,26 @@ export function Workspace({ data }: { data: WorkspaceData }) {
     };
   }, [language]);
 
+  /**
+   * Tear the runtimes down when the workspace unmounts.
+   *
+   * The executor registry is process-wide and memoised on purpose, so it
+   * survives a re-render — but not, deliberately, a navigation away. A leaked
+   * Pyodide worker holds tens of megabytes and keeps running whatever the
+   * candidate last started, and a candidate who visits one Python question
+   * then works through five JavaScript ones should not be carrying that for
+   * the rest of the session.
+   *
+   * Its own dependency-free effect: folding it into the warm-up effect above
+   * would dispose the runtime on every language switch, which is exactly the
+   * cost the memoisation exists to avoid.
+   */
+  React.useEffect(() => {
+    return () => {
+      void import('@/features/execution').then(({ disposeExecutors }) => disposeExecutors());
+    };
+  }, []);
+
   const handleChange = React.useCallback(
     (next: string) => {
       setEdits((current) => ({ ...current, [language]: next }));

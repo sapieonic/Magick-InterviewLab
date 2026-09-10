@@ -57,10 +57,11 @@ export async function saveDraftAction(input: {
       select: { updatedAt: true },
     });
 
-    // Only the list page, deliberately: this fires every ~1.5s of typing and
-    // revalidating the workspace route would re-run its queries under the
-    // candidate's cursor for a change the client already has.
-    revalidatePath('/interview');
+    // Nothing is revalidated. A draft is per-candidate, private, and already
+    // present in the client that just typed it — no rendered page anywhere
+    // shows it. This used to revalidate '/interview', which invalidated the
+    // assignments list on every ~1.5s autosave burst for a change that list
+    // does not display.
     return ok({ savedAt: draft.updatedAt.getTime() });
   });
 }

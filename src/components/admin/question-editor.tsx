@@ -17,7 +17,7 @@ import { Alert } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Section } from '@/components/admin/page-header';
 import { Field, FieldErrors } from '@/components/admin/form';
-import { MarkdownPreview } from '@/components/admin/markdown-preview';
+import { Markdown } from '@/components/markdown';
 
 const LANGUAGES: Array<{ value: Language; label: string; key: string }> = [
   { value: 'JAVASCRIPT', label: 'JavaScript', key: 'javascript' },
@@ -308,7 +308,15 @@ export function QuestionEditor({ initial }: { initial: QuestionEditorValues }) {
           </TabsContent>
           <TabsContent value="preview">
             <div className="bg-background min-h-40 rounded-md border px-4 py-3">
-              <MarkdownPreview source={description} />
+              {/*
+                The same renderer the candidate gets, deliberately. A
+                second, admin-only Markdown implementation existed here and
+                had drifted: it dropped tables, ignored `__bold__`, flattened
+                nested lists and clamped headings at h3 — so "Preview" showed
+                something the candidate would never see, which is worse than
+                no preview at all.
+              */}
+              <Markdown content={description} />
             </div>
           </TabsContent>
         </Tabs>

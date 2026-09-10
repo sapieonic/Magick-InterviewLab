@@ -72,7 +72,16 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://interviewlab:interviewlab@db:5432/interviewlab?schema=public}
+      # Hard-coded to the `db` service, NOT ${DATABASE_URL:-...}.
+      #
+      # Compose interpolates ${VAR} from ./.env, and .env.example ships a
+      # DATABASE_URL pointing at localhost for the host-Postgres workflow.
+      # The default-substitution form therefore handed the app container
+      # "localhost:5432" — itself, where nothing listens — and the entrypoint
+      # retried migrations ten times and exited, which `restart:
+      # unless-stopped` turned into a crash loop on the documented
+      # quick-start. Inside the compose network the database is always `db`.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-interviewlab}:${POSTGRES_PASSWORD:-interviewlab}@db:5432/${POSTGRES_DB:-interviewlab}?schema=public
 
       # --- startup behaviour ---
       RUN_MIGRATIONS: ${RUN_MIGRATIONS:-true}

@@ -1,5 +1,12 @@
 import 'server-only';
-import { z } from 'zod';
+import {
+  parseStoredResults,
+  type ParsedResults,
+  type StoredTestResult,
+} from '@/features/submissions/stored-results';
+
+export { parseStoredResults };
+export type { ParsedResults, StoredTestResult };
 import { prisma } from '@/lib/db/prisma';
 import type { Language } from '@/generated/prisma/enums';
 
@@ -70,69 +77,6 @@ export async function listSubmissionFilterOptions(): Promise<{
     }),
   ]);
   return { candidates, interviews };
-}
-
-const storedTestSchema = z.object({
-  testCaseId: z.string().max(200).default(''),
-  description: z.string().max(2000).optional(),
-  status: z.enum(['passed', 'failed', 'error', 'timeout']).catch('error'),
-  input: z.string().default(''),
-  expectedOutput: z.string().default(''),
-  actualOutput: z.string().default(''),
-  stderr: z.string().optional(),
-  errorMessage: z.string().optional(),
-  errorKind: z.string().optional(),
-  weight: z.number().catch(1),
-  durationMs: z.number().catch(0),
-});
-
-/**
- * The `results` column is written by the candidate-side runner, so this
- * parses defensively and accepts both the bare array and the enveloped form.
- * A review screen that throws on an unexpected payload would hide the very
- * submission an admin is trying to look at.
- */
-const storedResultsSchema = z.union([
-  z.array(storedTestSchema),
-  z.object({
-    tests: z.array(storedTestSchema).catch([]),
-    stdout: z.string().optional(),
-    stderr: z.string().optional(),
-    fatalError: z.string().optional(),
-    executionTimeMs: z.number().optional(),
-  }),
-]);
-
-export type StoredTestResult = z.infer<typeof storedTestSchema>;
-
-export interface ParsedResults {
-  tests: StoredTestResult[];
-  stdout?: string | undefined;
-  stderr?: string | undefined;
-  fatalError?: string | undefined;
-  executionTimeMs?: number | undefined;
-  unreadable: boolean;
-}
-
-export function parseStoredResults(value: unknown): ParsedResults {
-  const parsed = storedResultsSchema.safeParse(value);
-  if (!parsed.success) {
-    // An empty `{}` is the column default, i.e. "nothing recorded" rather
-    // than corruption — don't cry wolf about it.
-    const isDefault =
-      value === null ||
-      (typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 0);
-    return { tests: [], unreadable: !isDefault };
-  }
-  if (Array.isArray(parsed.data)) return { tests: parsed.data, unreadable: false };
-  return {
-    tests: parsed.data.tests,
-    stdout: parsed.data.stdout,
-    stderr: parsed.data.stderr,
-    fatalError: parsed.data.fatalError,
-    executionTimeMs: parsed.data.executionTimeMs,
-    unreadable: false,
-  };
 }
 
 export interface SubmissionDetail {

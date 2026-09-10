@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { RUN_ID, signIn } from './helpers';
+import { ADMIN_EMAIL, ADMIN_PASSWORD, RUN_ID, signIn, signOut } from './helpers';
 
 /**
  * Python is the half of the execution engine the main workflow spec does not
@@ -8,42 +8,93 @@ import { RUN_ID, signIn } from './helpers';
  * that is configurable precisely because it does not always resolve.
  *
  * Unit tests drive `PythonExecutor` through a fake worker, which proves the
- * protocol but not that CPython actually boots in a browser and reads stdin.
- * This does.
+ * message protocol but not that CPython actually boots in a browser and
+ * reads stdin. This does.
  *
- * It runs against the seeded "Reverse a String" question, so it needs
- * `npm run db:seed` to have run, and `SEED_CANDIDATE_PASSWORD` to be set.
+ * It provisions its own question, interview and candidate rather than using
+ * the seeded ones. An earlier version signed in as the seeded candidate and
+ * changed its password to a per-run value — which passed once and then
+ * failed forever, and, worse, turned Playwright's CI retry into a guaranteed
+ * second failure because the retry re-ran the sign-in with a password that
+ * no longer existed.
  */
 
-const CANDIDATE_EMAIL = process.env.SEED_CANDIDATE_EMAIL ?? 'candidate@magicvoice.local';
-const CANDIDATE_PASSWORD = process.env.SEED_CANDIDATE_PASSWORD ?? 'CandidateDev123';
-const NEW_PASSWORD = `PySpec${RUN_ID}aa1`;
+const QUESTION_TITLE = `E2E Python Echo ${RUN_ID}`;
+const INTERVIEW_TITLE = `E2E Python Interview ${RUN_ID}`;
+const CANDIDATE_EMAIL = `py.candidate.${RUN_ID}@example.com`;
+const TEMP_PASSWORD = 'PyTemp12345';
+const NEW_PASSWORD = 'PyChosen67890';
 
 const SOLUTION_PY = `import sys
 
 print(sys.stdin.readline().rstrip("\\n")[::-1])
 `;
 
-test('python runs in the browser and passes the seeded question', async ({ page }) => {
+test('python runs in the browser against a freshly authored question', async ({ page }) => {
   // Pyodide's first boot dominates this test; everything else is instant.
-  test.setTimeout(240_000);
+  test.setTimeout(300_000);
 
-  await signIn(page, CANDIDATE_EMAIL, CANDIDATE_PASSWORD);
+  await signIn(page, ADMIN_EMAIL, ADMIN_PASSWORD);
 
-  // The seeded candidate starts on a temporary password.
-  if (/change-password/.test(page.url())) {
-    await page.getByLabel(/current password/i).fill(CANDIDATE_PASSWORD);
-    await page.getByLabel(/^new password/i).fill(NEW_PASSWORD);
-    await page.getByLabel(/confirm/i).fill(NEW_PASSWORD);
-    await page.getByRole('button', { name: /update password/i }).click();
-    await expect(page).toHaveURL(/\/interview/, { timeout: 30_000 });
-  }
+  await test.step('admin authors a Python question', async () => {
+    await page.goto('/admin/questions/new');
+    await page.getByLabel('Title', { exact: true }).fill(QUESTION_TITLE);
+    await page
+      .getByLabel('Description', { exact: true })
+      .first()
+      .fill('Read one line from stdin and print it reversed.');
+    await page.getByLabel('Input (stdin)').first().fill('magicvoice');
+    await page.getByLabel('Expected output (stdout)').first().fill('eciovcigam');
+    await page.getByRole('button', { name: /create question/i }).click();
+    await expect(page.getByText(QUESTION_TITLE).first()).toBeVisible({ timeout: 30_000 });
+  });
 
-  await page.goto('/interview');
-  await page
-    .getByRole('link', { name: /Reverse a String/i })
-    .first()
-    .click();
+  await test.step('admin publishes an interview containing it', async () => {
+    await page.goto('/admin/interviews/new');
+    await page.getByLabel('Title', { exact: true }).fill(INTERVIEW_TITLE);
+    await page.getByLabel('Status', { exact: true }).selectOption('PUBLISHED');
+    await page.getByRole('button', { name: /create interview/i }).click();
+    await expect(page).toHaveURL(/\/admin\/interviews\/[^/]+$/, { timeout: 30_000 });
+
+    const picker = page.getByLabel('Question to add');
+    const value = await picker
+      .locator('option', { hasText: QUESTION_TITLE })
+      .first()
+      .getAttribute('value');
+    if (!value) throw new Error('Question not offered by the interview picker');
+    await picker.selectOption(value);
+    await page.getByRole('button', { name: /^add$/i }).click();
+    await expect(page.getByText(QUESTION_TITLE).first()).toBeVisible();
+  });
+
+  await test.step('admin creates a candidate for it', async () => {
+    await page.goto('/admin/candidates/new');
+    await page.getByLabel('Name', { exact: true }).fill('Py Candidate');
+    await page.getByLabel('Email', { exact: true }).fill(CANDIDATE_EMAIL);
+    await page.getByLabel(/temporary password/i).fill(TEMP_PASSWORD);
+
+    const assign = page.getByLabel(/assign interview/i);
+    const value = await assign
+      .locator('option', { hasText: INTERVIEW_TITLE })
+      .first()
+      .getAttribute('value');
+    if (!value) throw new Error('Interview not offered by the assignment picker');
+    await assign.selectOption(value);
+    await page.getByRole('button', { name: /create candidate/i }).click();
+    await expect(page.getByText(CANDIDATE_EMAIL).first()).toBeVisible({ timeout: 30_000 });
+  });
+
+  await signOut(page);
+
+  await signIn(page, CANDIDATE_EMAIL, TEMP_PASSWORD);
+  await expect(page).toHaveURL(/change-password/);
+  await page.getByLabel(/current password/i).fill(TEMP_PASSWORD);
+  await page.getByLabel(/^new password/i).fill(NEW_PASSWORD);
+  await page.getByLabel(/confirm/i).fill(NEW_PASSWORD);
+  await page.getByRole('button', { name: /update password/i }).click();
+  await expect(page).toHaveURL(/\/interview/, { timeout: 30_000 });
+
+  await page.getByRole('link', { name: new RegExp(escapeRegExp(QUESTION_TITLE), 'i') }).click();
   await expect(page).toHaveURL(/\/interview\/[^/]+\/q\/[^/]+/, { timeout: 30_000 });
 
   await page.getByRole('button', { name: /^Python$/ }).click();
@@ -55,12 +106,16 @@ test('python runs in the browser and passes the seeded question', async ({ page 
   await page.keyboard.press('Delete');
   await page.keyboard.insertText(SOLUTION_PY);
 
-  // Warm-up is triggered by selecting Python, so Run may be briefly disabled.
+  // Selecting Python starts the Pyodide warm-up, so Run is briefly disabled.
   const run = page.getByRole('button', { name: /run tests/i });
-  await expect(run).toBeEnabled({ timeout: 180_000 });
+  await expect(run).toBeEnabled({ timeout: 240_000 });
   await run.click();
 
-  await expect(page.getByText(/4\s*\/\s*4 tests passed/i).first()).toBeVisible({
-    timeout: 180_000,
+  await expect(page.getByText(/1\s*\/\s*1 tests? passed/i).first()).toBeVisible({
+    timeout: 240_000,
   });
 });
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}

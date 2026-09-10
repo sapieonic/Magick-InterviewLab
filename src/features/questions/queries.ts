@@ -1,6 +1,7 @@
 import 'server-only';
 import { prisma } from '@/lib/db/prisma';
 import type { Difficulty, InterviewStatus, Language } from '@/generated/prisma/enums';
+import { toRuntimeLanguage } from '@/features/submissions/language';
 
 /** `starterCode` is a Json column, so the shape is only a convention. */
 export function toStarterCode(value: unknown): Record<string, string> {
@@ -12,9 +13,14 @@ export function toStarterCode(value: unknown): Record<string, string> {
   return out;
 }
 
-/** Starter code is keyed by the lowercase language id, as the seed writes it. */
+/**
+ * Starter code is keyed by the runtime language id. Goes through the shared
+ * mapping rather than `.toLowerCase()`, for the reason that module states:
+ * a total record fails to compile the day a third language lands, whereas a
+ * `.toLowerCase()` silently produces a key nothing answers to.
+ */
 export function starterCodeKey(language: Language): string {
-  return language.toLowerCase();
+  return toRuntimeLanguage(language);
 }
 
 export interface QuestionListRow {

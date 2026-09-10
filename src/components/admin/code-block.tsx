@@ -17,9 +17,18 @@ export function CodeBlock({
   const lines = code.replace(/\r\n?/g, '\n').split('\n');
 
   return (
-    <div className={cn('bg-surface-code overflow-hidden rounded-md border', className)}>
-      <div className="scrollbar-thin overflow-auto" style={{ maxHeight }}>
-        <table className="w-full border-collapse font-mono text-[12.5px] leading-[1.65]">
+    // `min-w-0` is load-bearing: without it this block is a flex/grid child
+    // whose automatic minimum size is its content, so a long line of
+    // candidate code widened the whole admin page and pushed the nav
+    // off-screen on a phone instead of scrolling inside its own box.
+    <div
+      className={cn(
+        'bg-surface-code max-w-full min-w-0 overflow-hidden rounded-md border',
+        className,
+      )}
+    >
+      <div className="w-full scrollbar-thin overflow-auto" style={{ maxHeight }}>
+        <table className="w-max min-w-full border-collapse font-mono text-[12.5px] leading-[1.65]">
           <tbody>
             {lines.map((line, index) => (
               <tr key={index} className="align-top">

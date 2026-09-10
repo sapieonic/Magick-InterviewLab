@@ -137,6 +137,24 @@ test('admin authors an interview, a candidate solves it, admin reviews the submi
     await row.first().getByRole('link').first().click();
     await expect(page.getByText(QUESTION_TITLE).first()).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText(/100\s*%/).first()).toBeVisible();
+
+    /*
+     * The per-test breakdown, not just the headline score.
+     *
+     * An earlier version of this spec asserted only "100" and "100 %", and
+     * passed green while the review screen said "No per-test detail was
+     * recorded for this submission" for every submission the product could
+     * produce — the writer emitted `null` where the reader's schema accepted
+     * only `undefined`. The score alone is not evidence the payload survived.
+     */
+    await expect(
+      page.getByText('No per-test detail was recorded for this submission.'),
+    ).toHaveCount(0);
+    await expect(page.getByText(/^Test 1$/)).toBeVisible();
+    await expect(page.getByText(/^Test 2$/)).toBeVisible();
+
+    // And the candidate's source code, rendered as text rather than executed.
+    await expect(page.getByText('readLine()', { exact: false }).first()).toBeVisible();
   });
 });
 

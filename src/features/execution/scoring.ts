@@ -40,8 +40,12 @@ export interface Grader {
  * is a support ticket rather than a grading decision.
  */
 export function normalizeWeight(weight: number): number {
-  if (!Number.isFinite(weight) || weight < 1) return 1;
-  return weight;
+  if (!Number.isFinite(weight)) return 1;
+  // Floors, to stay byte-for-byte identical to the server's authoritative
+  // `scoreSubmission`. The column is an Int today, so the two only diverge on
+  // a fractional weight — but the day one appears, the candidate seeing 83%
+  // and the transcript recording 80% is the worst possible way to find out.
+  return Math.max(1, Math.floor(weight));
 }
 
 export function scoreResults(tests: readonly TestResult[]): ScoreSummary {
