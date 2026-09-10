@@ -126,7 +126,8 @@ export class WorkerBridge {
 
     return new Promise<BridgeOutcome<T>>((resolve) => {
       let settled = false;
-      let timer: ReturnType<typeof setTimeout> | undefined;
+      // Boxed because `cleanup` closes over it before the deadline is armed.
+      const deadline: { timer?: ReturnType<typeof setTimeout> } = {};
 
       const waiter: Waiter = {
         match: options.match as (data: unknown) => unknown,
@@ -137,17 +138,22 @@ export class WorkerBridge {
           resolve(outcome as BridgeOutcome<T>);
         },
         cleanup: () => {
-          if (timer !== undefined) clearTimeout(timer);
+          if (deadline.timer !== undefined) clearTimeout(deadline.timer);
           this.#waiters.delete(waiter);
           if (options.signal) options.signal.removeEventListener('abort', onAbort);
         },
       };
 
       const onAbort = (): void => {
-        // Same reasoning as the timeout: the worker may be mid-infinite-loop
-        // and will never observe a flag, so killing it is the only cancel.
-        this.terminate();
+        // Settle BEFORE terminating. `terminate()` fails every outstanding
+        // waiter with a generic "Worker terminated", so killing first turns
+        // this cancellation into an indistinguishable worker error — and a
+        // cancelled run then reads as a crash. Settling first removes this
+        // waiter from the set, so the kill only reaches genuine bystanders.
         waiter.settle({ kind: 'aborted' });
+        // The worker may be mid-infinite-loop and will never observe a flag,
+        // so killing it is the only cancel that actually works.
+        this.terminate();
       };
 
       if (options.signal?.aborted) {
@@ -169,9 +175,13 @@ export class WorkerBridge {
         return;
       }
 
-      timer = setTimeout(() => {
-        this.terminate();
+      deadline.timer = setTimeout(() => {
+        // Settle first, terminate second — see `onAbort` above. Reversed, a
+        // timeout is reported as a generic worker error, the test loop treats
+        // it as fatal, and every remaining test is skipped instead of running
+        // on a fresh worker.
         waiter.settle({ kind: 'timeout', elapsedMs: nowMs() - startedAt });
+        this.terminate();
       }, options.timeoutMs);
 
       try {
@@ -224,9 +234,11 @@ export class WorkerBridge {
       typeof event.message === 'string' && event.message.length > 0
         ? event.message
         : 'The execution worker failed to start or crashed.';
-    // The worker's state is unknowable after an uncaught error; start over.
-    this.terminate();
+    // Report the specific failure before `terminate()` can overwrite it with
+    // the generic "Worker terminated"; the worker's state is unknowable after
+    // an uncaught error, so it still has to go.
     this.#failAllWaiters(message);
+    this.terminate();
   };
 
   #failAllWaiters(message: string): void {

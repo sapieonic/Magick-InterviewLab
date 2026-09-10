@@ -147,9 +147,9 @@ describe('session cookie Secure flag', () => {
   }
 
   it('is off outside production when COOKIE_SECURE is unset', async () => {
-    await expect(setCookieWith({ NODE_ENV: 'development', COOKIE_SECURE: undefined })).resolves.toBe(
-      false,
-    );
+    await expect(
+      setCookieWith({ NODE_ENV: 'development', COOKIE_SECURE: undefined }),
+    ).resolves.toBe(false);
   });
 
   it('is on in production', async () => {

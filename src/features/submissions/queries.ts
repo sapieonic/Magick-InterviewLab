@@ -243,6 +243,7 @@ export async function loadWorkspace(
       durationMinutes: assignment.interview.durationMinutes,
       allowMultipleSubmissions: assignment.interview.allowMultipleSubmissions,
     },
+    question: workspaceQuestion,
     questions: assignment.interview.questions.map<QuestionNavItem>((link, position) => {
       const state = progressFor(progressState.progress, link.questionId);
       return {

@@ -147,9 +147,7 @@ export interface WorkerResultMessage {
 }
 
 export type WorkerOutboundMessage =
-  | WorkerReadyMessage
-  | WorkerInitErrorMessage
-  | WorkerResultMessage;
+  WorkerReadyMessage | WorkerInitErrorMessage | WorkerResultMessage;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -160,9 +158,7 @@ function optionalString(value: unknown): string | undefined {
 }
 
 function isErrorKind(value: unknown): value is ErrorKind {
-  return (
-    value === 'syntax' || value === 'runtime' || value === 'timeout' || value === 'internal'
-  );
+  return value === 'syntax' || value === 'runtime' || value === 'timeout' || value === 'internal';
 }
 
 /**

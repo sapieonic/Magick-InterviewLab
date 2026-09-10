@@ -77,9 +77,13 @@ describe('scoreResults', () => {
 
   it('rounds to the nearest whole percent', () => {
     // 1/3 -> 33.33 -> 33
-    expect(scoreResults([makeResult('passed'), makeResult('failed'), makeResult('failed')]).score).toBe(33);
+    expect(
+      scoreResults([makeResult('passed'), makeResult('failed'), makeResult('failed')]).score,
+    ).toBe(33);
     // 2/3 -> 66.67 -> 67
-    expect(scoreResults([makeResult('passed'), makeResult('passed'), makeResult('failed')]).score).toBe(67);
+    expect(
+      scoreResults([makeResult('passed'), makeResult('passed'), makeResult('failed')]).score,
+    ).toBe(67);
   });
 
   it('treats a zero or negative weight as 1 instead of dividing by zero', () => {

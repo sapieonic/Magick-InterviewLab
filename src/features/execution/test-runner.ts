@@ -123,7 +123,12 @@ export async function runTestLoop(
 
         if (data.error !== undefined && data.errorKind === 'syntax') {
           fatalError = data.error;
-          results.push({ ...common, status: 'error', errorKind: 'syntax', errorMessage: data.error });
+          results.push({
+            ...common,
+            status: 'error',
+            errorKind: 'syntax',
+            errorMessage: data.error,
+          });
         } else if (data.error !== undefined) {
           results.push({
             ...common,

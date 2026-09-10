@@ -12,7 +12,11 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { JavaScriptExecutor } from '@/features/execution/javascript-executor';
 import type { TestCase } from '@/features/execution/types';
-import type { WorkerEventLike, WorkerEventName, WorkerLike } from '@/features/execution/worker-bridge';
+import type {
+  WorkerEventLike,
+  WorkerEventName,
+  WorkerLike,
+} from '@/features/execution/worker-bridge';
 
 type Listener = (event: WorkerEventLike) => void;
 type Responder = (message: RunMessage, worker: FakeWorker) => void;
@@ -73,7 +77,10 @@ class FakeWorker implements WorkerLike {
     this.terminateCount += 1;
   }
 
-  reply(run: RunMessage, payload: Partial<Omit<RunMessage, 'type'>> & Record<string, unknown>): void {
+  reply(
+    run: RunMessage,
+    payload: Partial<Omit<RunMessage, 'type'>> & Record<string, unknown>,
+  ): void {
     this.emit({
       type: 'result',
       id: run.id,
@@ -236,7 +243,10 @@ describe('JavaScriptExecutor', () => {
       language: 'javascript',
       sourceCode: 'x()',
       timeoutMs: 1000,
-      tests: [makeTest({ id: 'a', expectedOutput: '1' }), makeTest({ id: 'b', expectedOutput: '1' })],
+      tests: [
+        makeTest({ id: 'a', expectedOutput: '1' }),
+        makeTest({ id: 'b', expectedOutput: '1' }),
+      ],
     });
 
     expect(result.tests.map((t) => t.status)).toEqual(['error', 'passed']);
@@ -258,7 +268,10 @@ describe('JavaScriptExecutor', () => {
       language: 'javascript',
       sourceCode: 'while (true) {}',
       timeoutMs: 30,
-      tests: [makeTest({ id: 'a', expectedOutput: '1' }), makeTest({ id: 'b', expectedOutput: '1' })],
+      tests: [
+        makeTest({ id: 'a', expectedOutput: '1' }),
+        makeTest({ id: 'b', expectedOutput: '1' }),
+      ],
     });
 
     expect(workers[0]?.terminateCount).toBe(1);
@@ -317,7 +330,9 @@ describe('JavaScriptExecutor', () => {
   it('resolves immediately when the signal is already aborted', async () => {
     const controller = new AbortController();
     controller.abort();
-    const { executor, factoryCalls } = harness((run, worker) => worker.reply(run, { stdout: '1\n' }));
+    const { executor, factoryCalls } = harness((run, worker) =>
+      worker.reply(run, { stdout: '1\n' }),
+    );
 
     const result = await executor.execute({
       language: 'javascript',

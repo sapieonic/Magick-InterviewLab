@@ -15,7 +15,10 @@ describe('hashPassword', () => {
   });
 
   it('salts every hash, so the same password never yields the same digest', async () => {
-    const [a, b] = await Promise.all([hashPassword('same-password-1'), hashPassword('same-password-1')]);
+    const [a, b] = await Promise.all([
+      hashPassword('same-password-1'),
+      hashPassword('same-password-1'),
+    ]);
     expect(a).not.toEqual(b);
   });
 

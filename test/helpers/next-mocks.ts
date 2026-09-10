@@ -80,9 +80,7 @@ export interface FakeHeaderStore {
 
 /** Header lookups in Next are case-insensitive; mirror that. */
 export function createHeaderStore(initial: Record<string, string> = {}): FakeHeaderStore {
-  let map = new Map<string, string>(
-    Object.entries(initial).map(([k, v]) => [k.toLowerCase(), v]),
-  );
+  let map = new Map<string, string>(Object.entries(initial).map(([k, v]) => [k.toLowerCase(), v]));
   return {
     get(name) {
       return map.get(name.toLowerCase()) ?? null;
