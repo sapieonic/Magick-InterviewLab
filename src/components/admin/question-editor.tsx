@@ -27,6 +27,13 @@ const LANGUAGES: Array<{ value: Language; label: string; key: string }> = [
 const DIFFICULTIES: Difficulty[] = ['EASY', 'MEDIUM', 'HARD'];
 
 export interface QuestionEditorTestCase {
+  /**
+   * The persisted id, absent for a row the admin just added. Round-tripping it
+   * lets the server keep a test case's id stable across an edit; without it a
+   * title-only change re-mints every id and silently zeroes the score of every
+   * submission still open against the old ids.
+   */
+  id?: string;
   input: string;
   expectedOutput: string;
   description: string;
@@ -145,6 +152,7 @@ export function QuestionEditor({ initial }: { initial: QuestionEditorValues }) {
       timeLimitMs,
       memoryLimitMb,
       testCases: rows.map((row) => ({
+        ...(row.id ? { id: row.id } : {}),
         input: row.input,
         expectedOutput: row.expectedOutput,
         description: row.description,
