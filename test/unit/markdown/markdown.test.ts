@@ -158,7 +158,9 @@ describe('Markdown — block grammar', () => {
   it('renders a fenced block with its language class and no reflowing', () => {
     const html = render('```python\ndef f():\n    return 1\n```');
 
-    expect(html).toContain('<pre><code class="language-python">def f():\n    return 1</code></pre>');
+    expect(html).toContain(
+      '<pre><code class="language-python">def f():\n    return 1</code></pre>',
+    );
   });
 
   it('renders an unordered list, an ordered list and a nested list', () => {
@@ -218,34 +220,31 @@ describe('Markdown — identifiers survive intact', () => {
   });
 
   it('still renders underscore emphasis around whole words', () => {
-    const html = render('_emphasis_ and __strong__ here');
+    const html = render('_emphasis_ and __strong words__ here');
 
     expect(html).toContain('<em>emphasis</em>');
-    expect(html).toContain('<strong>strong</strong>');
+    expect(html).toContain('<strong>strong words</strong>');
   });
 
   /**
-   * KNOWN DEFECT — currently failing, so it is skipped rather than committed
-   * red. A bare `__init__` still renders as `<strong>init</strong>`: the
-   * intraword guard `(?<![\w`])__([^_]+?)__(?![\w`])` sees a word boundary on
-   * both sides, because the underscores are the outermost characters of the
-   * token.
-   *
-   * CommonMark agrees with the current output, but this product should not:
-   * `__init__`, `__name__` and `__main__` are the identifiers a Python
-   * question is most likely to name, and they render with the underscores
-   * eaten. A fix would need the guard to also reject a run whose inner text
-   * is itself an identifier — e.g. requiring at least one space inside, or
-   * treating `__x__` as literal when it is a standalone token.
-   *
-   * Unskip once the renderer is changed; leave the assertion as the
-   * definition of correct.
+   * `__init__` escapes the intraword guard on its own: the underscores are
+   * the outermost characters of the token, so both boundaries are satisfied
+   * and CommonMark really does render it bold. The renderer therefore also
+   * requires whitespace inside a `__…__` run — because `__init__`,
+   * `__name__` and `__main__` are the identifiers a Python question is most
+   * likely to name, and `**bold**` already expresses single-word bold
+   * unambiguously.
    */
-  it.skip('leaves a dunder identifier such as __init__ literal', () => {
+  it('leaves a dunder identifier such as __init__ literal', () => {
     const html = render('Override __init__ and __repr__ in your class.');
 
     expect(html).toContain('__init__');
     expect(html).toContain('__repr__');
     expect(html).not.toContain('<strong>');
+  });
+
+  it('leaves a single-word __token__ literal, since **bold** covers that case', () => {
+    expect(render('the __sentinel__ value')).toContain('__sentinel__');
+    expect(render('the **sentinel** value')).toContain('<strong>sentinel</strong>');
   });
 });

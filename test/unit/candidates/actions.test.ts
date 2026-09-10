@@ -122,22 +122,25 @@ describe('candidate actions — authorization', () => {
   });
 
   it.each([
-    ['resetCandidatePasswordAction', resetCandidatePasswordAction, { temporaryPassword: VALID_PASSWORD }],
+    [
+      'resetCandidatePasswordAction',
+      resetCandidatePasswordAction,
+      { temporaryPassword: VALID_PASSWORD },
+    ],
     ['setCandidateActiveAction', setCandidateActiveAction, { isActive: 'false' }],
     ['updateCandidateAction', updateCandidateAction, { name: 'Ada', email: 'ada@example.com' }],
-  ])('refuses a candidate actor calling %s, touching neither the row nor its sessions', async (
-    _label,
-    action,
-    extra,
-  ) => {
-    h.getCurrentUser.mockResolvedValue(actor({ id: 'cand-1', role: 'CANDIDATE' }));
+  ])(
+    'refuses a candidate actor calling %s, touching neither the row nor its sessions',
+    async (_label, action, extra) => {
+      h.getCurrentUser.mockResolvedValue(actor({ id: 'cand-1', role: 'CANDIDATE' }));
 
-    const result = failed(await action(null, form({ id: 'cand-2', ...extra })));
+      const result = failed(await action(null, form({ id: 'cand-2', ...extra })));
 
-    expect(result.error).toBe('You do not have permission to perform this action.');
-    expect(h.db.user.update).not.toHaveBeenCalled();
-    expect(h.destroyAllSessionsFor).not.toHaveBeenCalled();
-  });
+      expect(result.error).toBe('You do not have permission to perform this action.');
+      expect(h.db.user.update).not.toHaveBeenCalled();
+      expect(h.destroyAllSessionsFor).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe('createCandidateAction', () => {
@@ -291,20 +294,23 @@ describe('candidate actions — the ADMIN-row guard', () => {
   });
 
   it.each([
-    ['resetCandidatePasswordAction', resetCandidatePasswordAction, { temporaryPassword: VALID_PASSWORD }],
+    [
+      'resetCandidatePasswordAction',
+      resetCandidatePasswordAction,
+      { temporaryPassword: VALID_PASSWORD },
+    ],
     ['setCandidateActiveAction', setCandidateActiveAction, { isActive: 'false' }],
     ['updateCandidateAction', updateCandidateAction, { name: 'Root', email: 'root@example.com' }],
-  ])('%s refuses a row that is not a candidate, and neither writes nor revokes', async (
-    _label,
-    action,
-    extra,
-  ) => {
-    const result = failed(await action(null, form({ id: adminTarget.id, ...extra })));
+  ])(
+    '%s refuses a row that is not a candidate, and neither writes nor revokes',
+    async (_label, action, extra) => {
+      const result = failed(await action(null, form({ id: adminTarget.id, ...extra })));
 
-    expect(result.error).toBe('Candidate not found.');
-    expect(h.db.user.update).not.toHaveBeenCalled();
-    expect(h.destroyAllSessionsFor).not.toHaveBeenCalled();
-  });
+      expect(result.error).toBe('Candidate not found.');
+      expect(h.db.user.update).not.toHaveBeenCalled();
+      expect(h.destroyAllSessionsFor).not.toHaveBeenCalled();
+    },
+  );
 
   it('scopes the lookup by role rather than filtering after the read', async () => {
     await resetCandidatePasswordAction(

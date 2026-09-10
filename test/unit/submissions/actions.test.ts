@@ -99,18 +99,27 @@ function succeeded<T>(result: ActionResult<T>): T {
 /** The `data` of the single `prisma.submission.create`. */
 function persistedSubmission(): Record<string, unknown> {
   const call = h.db.submission.create.mock.calls[0]?.[0] as
-    | { data: Record<string, unknown> }
-    | undefined;
+    { data: Record<string, unknown> } | undefined;
   if (!call) throw new Error('expected prisma.submission.create to have been called');
   return call.data;
 }
 
 /** Wire up the happy path: assigned, linked, multiple submissions allowed. */
-function allowSubmission(options: { allowMultipleSubmissions?: boolean } = {}): void {
+function allowSubmission(
+  options: {
+    allowMultipleSubmissions?: boolean;
+    supportedLanguages?: string[];
+    status?: string;
+  } = {},
+): void {
   h.db.interviewAssignment.findFirst.mockResolvedValue({ id: 'assign-1', status: 'IN_PROGRESS' });
-  h.db.interviewQuestion.findFirst.mockResolvedValue({ id: 'link-1' });
+  h.db.interviewQuestion.findFirst.mockResolvedValue({
+    id: 'link-1',
+    question: { supportedLanguages: options.supportedLanguages ?? ['JAVASCRIPT', 'PYTHON'] },
+  });
   h.db.interview.findUnique.mockResolvedValue({
     allowMultipleSubmissions: options.allowMultipleSubmissions ?? true,
+    status: options.status ?? 'PUBLISHED',
   });
   h.db.testCase.findMany.mockResolvedValue([{ id: 'tc-1', weight: 1 }]);
   h.db.submission.create.mockResolvedValue({ id: 'sub-1' });
@@ -274,6 +283,44 @@ describe('createSubmissionAction — the persisted score is recomputed from data
       where: { questionId: 'q-1' },
       select: { id: true, weight: true },
     });
+  });
+});
+
+describe('createSubmissionAction — the question and interview must accept the submission', () => {
+  /**
+   * The language is part of the client's payload, so it is a claim, not a
+   * rule. Nothing downstream re-checks it: the score would be computed and
+   * the transcript would record a Python answer to a JavaScript-only
+   * question.
+   */
+  it('refuses a language the question does not support, and writes nothing', async () => {
+    allowSubmission({ supportedLanguages: ['JAVASCRIPT'] });
+
+    const result = failed(await createSubmissionAction(submissionInput({ language: 'PYTHON' })));
+
+    expect(result.error).toBe('That language is not allowed for this question.');
+    expect(h.db.submission.create).not.toHaveBeenCalled();
+  });
+
+  it('accepts a language the question does support', async () => {
+    allowSubmission({ supportedLanguages: ['PYTHON'] });
+
+    const result = await createSubmissionAction(submissionInput({ language: 'PYTHON' }));
+
+    expect(result.ok).toBe(true);
+    expect(h.db.submission.create).toHaveBeenCalled();
+  });
+
+  /** A stale tab must not keep writing to a retired interview. */
+  it('refuses an archived interview, and writes nothing', async () => {
+    allowSubmission({ status: 'ARCHIVED' });
+
+    const result = failed(await createSubmissionAction(submissionInput()));
+
+    expect(result.error).toBe(
+      'This interview has been archived and is no longer accepting answers.',
+    );
+    expect(h.db.submission.create).not.toHaveBeenCalled();
   });
 });
 
@@ -445,7 +492,10 @@ describe('createSubmissionAction — the persisted results envelope round-trips 
 
 describe('saveDraftAction', () => {
   beforeEach(() => {
-    h.db.interviewQuestion.findFirst.mockResolvedValue({ id: 'link-1' });
+    h.db.interviewQuestion.findFirst.mockResolvedValue({
+      id: 'link-1',
+      question: { supportedLanguages: ['JAVASCRIPT', 'PYTHON'] },
+    });
     h.db.codeDraft.upsert.mockResolvedValue({ updatedAt: new Date('2026-01-01T00:00:00.000Z') });
   });
 

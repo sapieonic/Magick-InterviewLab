@@ -85,15 +85,30 @@ export async function createSubmissionAction(input: {
 
     const link = await prisma.interviewQuestion.findFirst({
       where: { interviewId: parsed.interviewId, questionId: parsed.questionId },
-      select: { id: true },
+      select: { id: true, question: { select: { supportedLanguages: true } } },
     });
     if (!link) throw new NotFoundError('Question');
 
+    // The language is part of the payload, so it is the client's claim, not
+    // the question's rule. Without this a candidate could file a Python
+    // submission against a JavaScript-only question — nothing downstream
+    // would reject it, and the transcript would record a language the
+    // question was never authored for.
+    if (!link.question.supportedLanguages.includes(parsed.language)) {
+      throw new AppError('That language is not allowed for this question.');
+    }
+
     const interview = await prisma.interview.findUnique({
       where: { id: parsed.interviewId },
-      select: { allowMultipleSubmissions: true },
+      select: { allowMultipleSubmissions: true, status: true },
     });
     if (!interview) throw new NotFoundError('Interview');
+
+    // An archived interview is retired. A stale tab holding an assignment
+    // from before the archive must not keep writing to it.
+    if (interview.status === 'ARCHIVED') {
+      throw new AppError('This interview has been archived and is no longer accepting answers.');
+    }
 
     if (!interview.allowMultipleSubmissions) {
       const existing = await prisma.submission.findFirst({

@@ -118,10 +118,22 @@ describe('interview actions — authorization', () => {
 
   it.each([
     ['archiveInterviewAction', archiveInterviewAction, { id: 'int-1' }],
-    ['addInterviewQuestionAction', addInterviewQuestionAction, { interviewId: 'int-1', questionId: 'q-1' }],
-    ['removeInterviewQuestionAction', removeInterviewQuestionAction, { interviewId: 'int-1', questionId: 'q-1' }],
+    [
+      'addInterviewQuestionAction',
+      addInterviewQuestionAction,
+      { interviewId: 'int-1', questionId: 'q-1' },
+    ],
+    [
+      'removeInterviewQuestionAction',
+      removeInterviewQuestionAction,
+      { interviewId: 'int-1', questionId: 'q-1' },
+    ],
     ['assignInterviewAction', assignInterviewAction, { interviewId: 'int-1', candidateId: 'c-1' }],
-    ['unassignInterviewAction', unassignInterviewAction, { interviewId: 'int-1', candidateId: 'c-1' }],
+    [
+      'unassignInterviewAction',
+      unassignInterviewAction,
+      { interviewId: 'int-1', candidateId: 'c-1' },
+    ],
   ])('refuses a candidate calling %s', async (_label, action, fields) => {
     const result = failed(await action(null, form(fields)));
 
@@ -379,6 +391,31 @@ describe('reorderInterviewQuestionsAction', () => {
       'The question list changed while you were editing. Reload and retry.',
     );
     expect(h.db.$transaction).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The length check alone does not catch this. `['q-a', 'q-a']` against
+   * links `[a, b]` is the right length, and the action resolves ids through
+   * a Map — so it would write `link-a` at positions 0 and 1, never touch
+   * `link-b`, and leave exactly the duplicated/gapped ordering the
+   * contiguous renumber exists to prevent.
+   */
+  it('refuses a list containing the same question twice, and opens no transaction', async () => {
+    h.db.interviewQuestion.findMany.mockResolvedValue([
+      { id: 'link-a', questionId: 'q-a' },
+      { id: 'link-b', questionId: 'q-b' },
+    ]);
+
+    const result = failed(
+      await reorderInterviewQuestionsAction({
+        interviewId: 'int-1',
+        questionIds: ['q-a', 'q-a'],
+      }),
+    );
+
+    expect(result.error).toBeTruthy();
+    expect(h.db.$transaction).not.toHaveBeenCalled();
+    expect(h.db.interviewQuestion.update).not.toHaveBeenCalled();
   });
 
   // Same length but a question that is no longer linked: a stale tab could

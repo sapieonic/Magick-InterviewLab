@@ -75,8 +75,7 @@ function failed(result: ActionResult<unknown>): ActionFailure {
 /** The rows handed to the single `testCase.createMany`. */
 function createdTestCases(): Array<Record<string, unknown>> {
   const call = h.db.testCase.createMany.mock.calls[0]?.[0] as
-    | { data: Array<Record<string, unknown>> }
-    | undefined;
+    { data: Array<Record<string, unknown>> } | undefined;
   if (!call) throw new Error('expected testCase.createMany to have been called');
   return call.data;
 }

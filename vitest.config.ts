@@ -8,7 +8,9 @@ export default defineConfig({
   test: {
     environment: 'node',
     globals: false,
-    include: ['test/unit/**/*.test.ts'],
+    // .tsx too: component tests (the Markdown renderer's XSS suite) are
+    // easier to read as JSX than as createElement chains.
+    include: ['test/unit/**/*.test.{ts,tsx}'],
     exclude: ['test/e2e/**', 'node_modules/**'],
     // Process isolation: several suites poke at module-level singletons.
     pool: 'forks',

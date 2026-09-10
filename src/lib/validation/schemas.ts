@@ -98,7 +98,16 @@ export const interviewInputSchema = z.object({
 
 export const reorderQuestionsSchema = z.object({
   interviewId: cuidSchema,
-  questionIds: z.array(cuidSchema).max(200),
+  // Uniqueness is load-bearing, not hygiene. The action checks the payload
+  // length against the number of existing links and then resolves each id
+  // through a Map, so `[a, a]` against links `[a, b]` passes the length
+  // check, writes `a` at both positions and never touches `b` — producing
+  // exactly the duplicated/gapped `position` that the contiguous renumber
+  // exists to prevent.
+  questionIds: z
+    .array(cuidSchema)
+    .max(200)
+    .refine((ids) => new Set(ids).size === ids.length, 'Question order contains duplicates.'),
 });
 
 // --- questions -------------------------------------------------------------

@@ -37,18 +37,26 @@ const TABLE_DELIMITER = /^[ \t]*\|?[ \t]*:?-{1,}:?[ \t]*(\|[ \t]*:?-{1,}:?[ \t]*
  * everything (so `**` inside backticks stays literal), then links, then bold,
  * then italic.
  *
- * The underscore forms carry a word-boundary guard that the asterisk forms do
- * not need, and CommonMark forbids intraword `_` emphasis for exactly the
- * reason it matters here: this is a *coding* interview product. Without the
- * guard, a description mentioning `max_value`, `__init__` or `MY_CONST`
- * renders with the identifier chopped up and the underscores eaten — which is
- * both wrong and confusing when the identifier is the thing being discussed.
+ * The underscore forms deviate from CommonMark, deliberately, because this is
+ * a *coding* interview product and the underscore is an identifier character
+ * before it is a formatting one.
+ *
+ *   - Both forms carry a word-boundary guard, so `max_value`, `MY_CONST` and
+ *     `window.__X_Y` survive intact instead of being chopped up with the
+ *     underscores eaten.
+ *   - `__…__` additionally requires whitespace in its content. The guard
+ *     alone cannot save `__init__`: the underscores are the outermost
+ *     characters of the token, so both boundaries are satisfied and
+ *     CommonMark really does render it bold. But `__init__`, `__name__` and
+ *     `__main__` are precisely the identifiers a Python question names, and
+ *     they matter far more here than single-word `__bold__` — which `**bold**`
+ *     already expresses unambiguously.
  */
 const INLINE_SOURCE = [
   '`([^`\\n]+)`', // 1: code
   '\\[([^\\]\\n]*)\\]\\(([^()\\s]*)\\)', // 2: link text, 3: href
   '\\*\\*([\\s\\S]+?)\\*\\*', // 4: **bold**
-  '(?<![\\w`])__([^_]+?)__(?![\\w`])', // 5: __bold__, not intraword
+  '(?<![\\w`])__([^_]*\\s[^_]*?)__(?![\\w`])', // 5: __bold__, multi-word only
   '\\*([^*\\n]+?)\\*', // 6: *italic*
   '(?<![\\w`])_([^_\\n]+?)_(?![\\w`])', // 7: _italic_, not intraword
 ].join('|');
