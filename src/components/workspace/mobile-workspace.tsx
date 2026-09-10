@@ -56,8 +56,8 @@ export function MobileWorkspace({
       <div className="border-warning/30 bg-warning/8 flex gap-2.5 rounded-md border px-3 py-2.5">
         <Monitor className="text-warning mt-px size-4 shrink-0" aria-hidden />
         <p className="text-[13px]">
-          Open this page on a desktop browser to write and run code. Everything below is
-          read-only on a small screen.
+          Open this page on a desktop browser to write and run code. Everything below is read-only
+          on a small screen.
         </p>
       </div>
 

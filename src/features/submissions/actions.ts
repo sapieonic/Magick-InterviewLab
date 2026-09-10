@@ -104,7 +104,9 @@ export async function createSubmissionAction(input: {
         select: { id: true },
       });
       if (existing) {
-        throw new AppError('This interview allows one submission per question, and yours is already recorded.');
+        throw new AppError(
+          'This interview allows one submission per question, and yours is already recorded.',
+        );
       }
     }
 

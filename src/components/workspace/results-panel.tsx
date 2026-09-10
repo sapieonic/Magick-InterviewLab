@@ -25,7 +25,9 @@ export interface ResultsPanelProps {
 function StatusPill({ test }: { test: TestResult }) {
   const tone = testStatusTone(test.status);
   return (
-    <Badge variant={tone === 'success' ? 'success' : tone === 'warning' ? 'warning' : 'destructive'}>
+    <Badge
+      variant={tone === 'success' ? 'success' : tone === 'warning' ? 'warning' : 'destructive'}
+    >
       {testStatusLabel(test.status, test.errorKind)}
     </Badge>
   );
@@ -125,7 +127,7 @@ function RunSummary({ state }: { state: RunState }) {
   return (
     <div className="flex flex-wrap items-center gap-2 text-[13px]">
       <span className={cn('font-medium', allPassed ? 'text-success' : 'text-foreground')}>
-        {passed} of {total} {total === 1 ? 'test' : 'tests'} passed
+        {passed} / {total} {total === 1 ? 'test' : 'tests'} passed
       </span>
       {typeof result.executionTimeMs === 'number' ? (
         <span className="text-muted-foreground tnum">
@@ -172,7 +174,7 @@ export function ResultsPanel({ state, onCancel, blockedReason }: ResultsPanelPro
         {liveMessage}
       </p>
 
-      <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 scrollbar-thin overflow-y-auto">
         {/* A blocked runtime is a banner, not a replacement: a candidate who
             switches to Python after a green JavaScript run should still be
             able to read that run. */}

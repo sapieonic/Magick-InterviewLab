@@ -39,7 +39,9 @@ export function passedCount(tests: readonly TestResult[]): number {
 
 /** True when `state` describes a finished run of exactly this code. */
 export function runMatches(state: RunState, language: Language, sourceCode: string): boolean {
-  return state.phase === 'complete' && state.language === language && state.sourceCode === sourceCode;
+  return (
+    state.phase === 'complete' && state.language === language && state.sourceCode === sourceCode
+  );
 }
 
 export function resultOf(state: RunState): ExecutionResult | null {

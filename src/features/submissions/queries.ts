@@ -36,10 +36,7 @@ interface QuestionProgress {
 }
 
 /** Best score wins, not latest: a candidate is judged on their best attempt. */
-function progressFor(
-  map: Map<string, QuestionProgress>,
-  questionId: string,
-): QuestionProgress {
+function progressFor(map: Map<string, QuestionProgress>, questionId: string): QuestionProgress {
   return map.get(questionId) ?? { submissionCount: 0, bestScore: null };
 }
 

@@ -26,7 +26,7 @@ export function QuestionNav({
       <p className="text-muted-foreground px-3 pt-3 pb-1.5 text-[11px] font-medium tracking-wide uppercase">
         Questions
       </p>
-      <ul className="scrollbar-thin min-h-0 flex-1 overflow-y-auto px-1.5 pb-3">
+      <ul className="min-h-0 flex-1 scrollbar-thin overflow-y-auto px-1.5 pb-3">
         {questions.map((question) => {
           const active = question.id === currentQuestionId;
           const submitted = question.submissionCount > 0;
@@ -45,7 +45,10 @@ export function QuestionNav({
                 ) : question.hasDraft ? (
                   <CircleDot className="text-warning mt-0.5 size-3.5 shrink-0" aria-hidden />
                 ) : (
-                  <Circle className="text-muted-foreground/40 mt-0.5 size-3.5 shrink-0" aria-hidden />
+                  <Circle
+                    className="text-muted-foreground/40 mt-0.5 size-3.5 shrink-0"
+                    aria-hidden
+                  />
                 )}
                 <span className="min-w-0 flex-1">
                   <span

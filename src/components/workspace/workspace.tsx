@@ -157,9 +157,11 @@ export function Workspace({ data }: { data: WorkspaceData }) {
   const [submitOpen, setSubmitOpen] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [submitError, setSubmitError] = React.useState<string | null>(null);
-  const [recorded, setRecorded] = React.useState<{ score: number; passed: number; total: number } | null>(
-    null,
-  );
+  const [recorded, setRecorded] = React.useState<{
+    score: number;
+    passed: number;
+    total: number;
+  } | null>(null);
   const [confirmReset, setConfirmReset] = React.useState(false);
 
   const autosave = useDraftAutosave(question.id);
@@ -167,11 +169,7 @@ export function Workspace({ data }: { data: WorkspaceData }) {
 
   const localDrafts = useLocalDrafts(question.id, question.supportedLanguages);
   const baseBuffers = React.useMemo(() => resolveBuffers(data, localDrafts), [data, localDrafts]);
-  const capabilities = React.useSyncExternalStore(
-    noopSubscribe,
-    capabilitiesSnapshot,
-    () => null,
-  );
+  const capabilities = React.useSyncExternalStore(noopSubscribe, capabilitiesSnapshot, () => null);
 
   const source = edits[language] ?? baseBuffers[language] ?? '';
   const runningRef = React.useRef(false);
@@ -385,8 +383,7 @@ export function Workspace({ data }: { data: WorkspaceData }) {
     return index >= 0 ? questions[index + 1] : undefined;
   })();
 
-  const singleSubmissionUsed =
-    !interview.allowMultipleSubmissions && data.submissions.length > 0;
+  const singleSubmissionUsed = !interview.allowMultipleSubmissions && data.submissions.length > 0;
   const submitDisabled = submitting || run.phase === 'running' || singleSubmissionUsed;
 
   const saveLabel =
@@ -475,7 +472,7 @@ export function Workspace({ data }: { data: WorkspaceData }) {
             maxFraction={0.75}
             label="Resize the problem description"
             first={
-              <div className="scrollbar-thin h-full overflow-y-auto px-5 py-4">
+              <div className="h-full scrollbar-thin overflow-y-auto px-5 py-4">
                 <Markdown content={question.description} />
               </div>
             }
@@ -566,7 +563,7 @@ export function Workspace({ data }: { data: WorkspaceData }) {
                   <div className="border-success/25 bg-success/8 flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2 text-[13px]">
                     <Check className="text-success size-4 shrink-0" aria-hidden />
                     <p className="text-success">
-                      Submission recorded — <span className="tnum font-medium">{recorded.score}%</span>{' '}
+                      Submitted — scored <span className="tnum font-medium">{recorded.score}%</span>{' '}
                       ({recorded.passed} of {recorded.total} tests).
                     </p>
                     {nextQuestion ? (

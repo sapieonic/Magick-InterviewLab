@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Locator, type Page } from '@playwright/test';
 import { ADMIN_EMAIL, ADMIN_PASSWORD, RUN_ID, signIn, signOut } from './helpers';
 
 /**
@@ -37,30 +37,29 @@ test('admin authors an interview, a candidate solves it, admin reviews the submi
   // -------------------------------------------------------- create question
   await test.step('admin creates a coding question with test cases', async () => {
     await page.goto('/admin/questions/new');
-    await page.getByLabel('Title').fill(QUESTION_TITLE);
+    await page.getByLabel('Title', { exact: true }).fill(QUESTION_TITLE);
     await page
-      .getByLabel(/description/i)
+      .getByLabel('Description', { exact: true })
       .first()
       .fill('Read two space-separated integers from stdin and print their sum.');
 
-    // Two test cases: one supplied by the form's initial row, one added.
+    await ensureTestCaseRows(page, 2);
     await fillTestCase(page, 0, '2 3', '5');
-    await page.getByRole('button', { name: /add test case/i }).click();
     await fillTestCase(page, 1, '10 -4', '6');
 
-    await page.getByRole('button', { name: /^(save|create)/i }).click();
+    await page.getByRole('button', { name: /create question/i }).click();
     await expect(page.getByText(QUESTION_TITLE).first()).toBeVisible({ timeout: 30_000 });
   });
 
   // ------------------------------------------------------- create interview
   await test.step('admin creates an interview and adds the question', async () => {
     await page.goto('/admin/interviews/new');
-    await page.getByLabel('Title').fill(INTERVIEW_TITLE);
+    await page.getByLabel('Title', { exact: true }).fill(INTERVIEW_TITLE);
     await page
-      .getByLabel(/description/i)
-      .first()
+      .getByLabel('Description', { exact: true })
       .fill('Automated end-to-end interview.');
-    await page.getByRole('button', { name: /^(save|create)/i }).click();
+    await page.getByLabel('Status', { exact: true }).selectOption('PUBLISHED');
+    await page.getByRole('button', { name: /create interview/i }).click();
 
     await expect(page).toHaveURL(/\/admin\/interviews\/[^/]+$/, { timeout: 30_000 });
     await addQuestionToInterview(page, QUESTION_TITLE);
@@ -70,14 +69,12 @@ test('admin authors an interview, a candidate solves it, admin reviews the submi
   // ------------------------------------------------------- create candidate
   await test.step('admin creates a candidate and assigns the interview', async () => {
     await page.goto('/admin/candidates/new');
-    await page.getByLabel('Name').fill(CANDIDATE_NAME);
-    await page.getByLabel('Email').fill(CANDIDATE_EMAIL);
+    await page.getByLabel('Name', { exact: true }).fill(CANDIDATE_NAME);
+    await page.getByLabel('Email', { exact: true }).fill(CANDIDATE_EMAIL);
     await page.getByLabel(/temporary password/i).fill(CANDIDATE_TEMP_PASSWORD);
+    await selectOptionContaining(page.getByLabel(/assign interview/i), INTERVIEW_TITLE);
 
-    const assign = page.getByLabel(/assign interview/i);
-    if (await assign.count()) await assign.selectOption({ label: INTERVIEW_TITLE });
-
-    await page.getByRole('button', { name: /^(save|create)/i }).click();
+    await page.getByRole('button', { name: /create candidate/i }).click();
     await expect(page.getByText(CANDIDATE_EMAIL).first()).toBeVisible({ timeout: 30_000 });
   });
 
@@ -147,28 +144,42 @@ test('admin authors an interview, a candidate solves it, admin reviews the submi
 
 // --------------------------------------------------------------------------
 
+/** The editor starts with one row; add until there are `count` of them. */
+async function ensureTestCaseRows(page: Page, count: number): Promise<void> {
+  const inputs = page.getByLabel('Input (stdin)');
+  for (let existing = await inputs.count(); existing < count; existing += 1) {
+    await page.getByRole('button', { name: /add test/i }).click();
+    await expect(inputs).toHaveCount(existing + 1);
+  }
+}
+
 async function fillTestCase(
   page: Page,
   index: number,
   input: string,
   expectedOutput: string,
 ): Promise<void> {
-  await page.getByLabel(/^input$/i).nth(index).fill(input);
-  await page.getByLabel(/expected output/i).nth(index).fill(expectedOutput);
+  await page.getByLabel('Input (stdin)').nth(index).fill(input);
+  await page.getByLabel('Expected output (stdout)').nth(index).fill(expectedOutput);
 }
 
 async function addQuestionToInterview(page: Page, title: string): Promise<void> {
-  const picker = page.getByLabel(/add (a )?question/i).first();
-  if (await picker.count()) {
-    await picker.selectOption({ label: title });
-    await page.getByRole('button', { name: /^add/i }).first().click();
-    return;
-  }
-  // Fallback: a row per available question with its own Add control.
-  await page
-    .getByRole('row', { name: new RegExp(escapeRegExp(title), 'i') })
-    .getByRole('button', { name: /add/i })
-    .click();
+  await selectOptionContaining(page.getByLabel('Question to add'), title);
+  await page.getByRole('button', { name: /^add$/i }).click();
+}
+
+/**
+ * `selectOption({ label })` needs an exact string, but these options carry
+ * suffixes ("… · 2 tests") that the test has no business hard-coding. Resolve
+ * the option's value from the DOM and select by that instead.
+ */
+async function selectOptionContaining(select: Locator, text: string): Promise<void> {
+  const value = await select
+    .locator('option', { hasText: text })
+    .first()
+    .getAttribute('value');
+  if (!value) throw new Error(`No option containing "${text}"`);
+  await select.selectOption(value);
 }
 
 /**

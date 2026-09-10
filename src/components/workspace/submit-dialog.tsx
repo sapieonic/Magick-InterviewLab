@@ -106,7 +106,7 @@ export function SubmitDialog({
             Cancel
           </Button>
           <Button onClick={onConfirm} loading={submitting}>
-            {lastRun ? 'Submit' : 'Run tests and submit'}
+            {lastRun ? 'Confirm submission' : 'Run tests and confirm'}
           </Button>
         </DialogFooter>
       </DialogContent>

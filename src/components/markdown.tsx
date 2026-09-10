@@ -127,7 +127,11 @@ function renderInline(text: string, key: string): React.ReactNode[] {
 
 function isFenceClose(line: string, marker: string): boolean {
   const trimmed = line.trim();
-  return trimmed.startsWith(marker[0] ?? '`') && trimmed.length >= marker.length && /^[`~]+$/.test(trimmed);
+  return (
+    trimmed.startsWith(marker[0] ?? '`') &&
+    trimmed.length >= marker.length &&
+    /^[`~]+$/.test(trimmed)
+  );
 }
 
 function splitTableRow(line: string): string[] {
@@ -142,7 +146,9 @@ function splitTableRow(line: string): string[] {
 function isTableStart(lines: string[], index: number): boolean {
   const head = lines[index] ?? '';
   const delim = lines[index + 1];
-  return head.includes('|') && delim !== undefined && TABLE_DELIMITER.test(delim) && delim.includes('-');
+  return (
+    head.includes('|') && delim !== undefined && TABLE_DELIMITER.test(delim) && delim.includes('-')
+  );
 }
 
 function startsBlock(lines: string[], index: number): boolean {
@@ -305,7 +311,9 @@ function parseList(
       const ahead = lines[i + 1] ?? '';
       const aheadItem = matchListItem(ahead);
       const continues =
-        (aheadItem !== null && aheadItem.indent <= baseIndent + 1 && aheadItem.ordered === ordered) ||
+        (aheadItem !== null &&
+          aheadItem.indent <= baseIndent + 1 &&
+          aheadItem.ordered === ordered) ||
         (ahead.trim() !== '' && leadingSpaces(ahead) >= baseIndent + 2);
       if (!continues) break;
       current.push('');
@@ -330,7 +338,13 @@ function parseList(
     let j = 0;
     while (j < itemLines.length) {
       const l = itemLines[j] ?? '';
-      if (l.trim() === '' || matchListItem(l) || FENCE.test(l) || QUOTE.test(l) || HEADING.test(l)) {
+      if (
+        l.trim() === '' ||
+        matchListItem(l) ||
+        FENCE.test(l) ||
+        QUOTE.test(l) ||
+        HEADING.test(l)
+      ) {
         break;
       }
       lead.push(l.trim());

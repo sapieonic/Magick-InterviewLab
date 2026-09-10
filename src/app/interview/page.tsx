@@ -9,7 +9,6 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { scoreLabel } from '@/features/submissions/score';
-import { cn } from '@/lib/utils';
 
 export const metadata: Metadata = { title: 'Your interviews' };
 export const dynamic = 'force-dynamic';
@@ -114,9 +113,7 @@ function AssignmentCard({ summary }: { summary: AssignmentSummary }) {
           ) : (
             <span>Untimed</span>
           )}
-          {!interview.allowMultipleSubmissions ? (
-            <span>One submission per question</span>
-          ) : null}
+          {!interview.allowMultipleSubmissions ? <span>One submission per question</span> : null}
         </div>
 
         {interview.description ? (
@@ -130,7 +127,7 @@ function AssignmentCard({ summary }: { summary: AssignmentSummary }) {
             This interview has no questions yet. Check back shortly.
           </p>
         ) : (
-          <ul className={cn('space-y-0.5')}>
+          <ul className="space-y-0.5">
             {questions.map((question) => (
               <QuestionRow key={question.id} assignmentId={assignment.id} question={question} />
             ))}

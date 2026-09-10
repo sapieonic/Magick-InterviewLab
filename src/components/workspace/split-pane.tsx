@@ -86,8 +86,7 @@ export function SplitPane({
     React.useCallback(() => readStoredFraction(storageKey), [storageKey]),
     () => null,
   );
-  const storedFraction =
-    storedRaw === null ? null : clamp(storedRaw, minFraction, maxFraction);
+  const storedFraction = storedRaw === null ? null : clamp(storedRaw, minFraction, maxFraction);
   const fraction = dragged ?? storedFraction ?? defaultFraction;
 
   const persist = React.useCallback(
@@ -172,7 +171,7 @@ export function SplitPane({
           aria-hidden
           className={cn(
             'absolute',
-            isVertical ? '-top-1.5 -bottom-1.5 left-0 w-full' : '-left-1.5 -right-1.5 top-0 h-full',
+            isVertical ? '-top-1.5 -bottom-1.5 left-0 w-full' : 'top-0 -right-1.5 -left-1.5 h-full',
           )}
         />
       </div>
