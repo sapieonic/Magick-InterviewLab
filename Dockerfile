@@ -31,6 +31,17 @@ WORKDIR /app
 # ---------------------------------------------------------------------------
 FROM base AS deps
 COPY package.json package-lock.json ./
+# The repo's postinstall runs `prisma generate` and stages Monaco, so the
+# schema and the scripts have to be here before `npm ci`. They are copied
+# separately from the rest of the source so the dependency layer still caches
+# across ordinary code changes.
+#
+# `--ignore-scripts` is deliberately NOT used: @prisma/engines and esbuild
+# both install real binaries from their own postinstall, and skipping those
+# breaks `prisma generate` in the builder stage.
+COPY prisma ./prisma
+COPY prisma.config.ts ./
+COPY scripts ./scripts
 RUN npm ci
 
 # ---------------------------------------------------------------------------
