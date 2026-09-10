@@ -32,6 +32,36 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+/** Cached so `getSnapshot` returns a stable value between writes. */
+const fractionCache = new Map<string, number | null>();
+const noopSubscribe = () => () => {};
+
+function readStoredFraction(key: string | undefined): number | null {
+  if (!key) return null;
+  const cached = fractionCache.get(key);
+  if (cached !== undefined) return cached;
+  let value: number | null = null;
+  try {
+    const raw = window.localStorage.getItem(key);
+    const parsed = raw === null ? Number.NaN : Number.parseFloat(raw);
+    value = Number.isFinite(parsed) ? parsed : null;
+  } catch {
+    // Private mode / disabled storage: the default split is fine.
+  }
+  fractionCache.set(key, value);
+  return value;
+}
+
+function writeStoredFraction(key: string | undefined, value: number): void {
+  if (!key) return;
+  fractionCache.set(key, value);
+  try {
+    window.localStorage.setItem(key, value.toFixed(4));
+  } catch {
+    // Not worth surfacing — the layout still works for this session.
+  }
+}
+
 export function SplitPane({
   orientation = 'vertical',
   first,
@@ -59,17 +89,9 @@ export function SplitPane({
   const storedFraction =
     storedRaw === null ? null : clamp(storedRaw, minFraction, maxFraction);
   const fraction = dragged ?? storedFraction ?? defaultFraction;
-  const setFraction = setDragged;
 
   const persist = React.useCallback(
-    (next: number) => {
-      if (!storageKey) return;
-      try {
-        window.localStorage.setItem(storageKey, next.toFixed(4));
-      } catch {
-        // Not worth surfacing — the layout still works.
-      }
-    },
+    (next: number) => writeStoredFraction(storageKey, next),
     [storageKey],
   );
 
@@ -80,17 +102,15 @@ export function SplitPane({
       const raw = isVertical
         ? (clientY - rect.top) / Math.max(rect.height, 1)
         : (clientX - rect.left) / Math.max(rect.width, 1);
-      setFraction(clamp(raw, minFraction, maxFraction));
+      setDragged(clamp(raw, minFraction, maxFraction));
     },
     [isVertical, minFraction, maxFraction],
   );
 
   const nudge = (delta: number) => {
-    setFraction((current) => {
-      const next = clamp(current + delta, minFraction, maxFraction);
-      persist(next);
-      return next;
-    });
+    const next = clamp(fraction + delta, minFraction, maxFraction);
+    setDragged(next);
+    persist(next);
   };
 
   return (

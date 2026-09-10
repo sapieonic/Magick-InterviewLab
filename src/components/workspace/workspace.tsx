@@ -28,7 +28,12 @@ import { SplitPane } from './split-pane';
 import { SubmitDialog } from './submit-dialog';
 import { TimerChip, useCountdown } from './interview-timer';
 import { IDLE_RUN, runMatches, type RunState } from './run-state';
-import { readLocalDraft, useDraftAutosave, writeLocalDraft } from './use-draft-autosave';
+import {
+  useDraftAutosave,
+  useLocalDrafts,
+  writeLocalDraft,
+  type LocalDraft,
+} from './use-draft-autosave';
 
 /** Mirrors the caps in `createSubmissionSchema`; over-long values are clipped
  *  here rather than rejected by the action after a candidate has waited for a
@@ -101,13 +106,39 @@ function starterFor(data: WorkspaceData, language: Language): string {
   return data.question.starterCode[language] ?? defaultStarterCode(language);
 }
 
-function initialBuffers(data: WorkspaceData): Record<string, string> {
+/**
+ * The buffer a candidate starts from, per language: the newer of the server
+ * draft and the localStorage mirror, falling back to the question's starter
+ * code. `local` is null during SSR and on the hydrating render, which is
+ * exactly why this is derived rather than stored — no effect, no mismatch.
+ */
+function resolveBuffers(
+  data: WorkspaceData,
+  local: Record<string, LocalDraft> | null,
+): Record<string, string> {
   const buffers: Record<string, string> = {};
   for (const language of data.question.supportedLanguages) {
-    const draft = data.drafts.find((entry) => entry.language === language);
-    buffers[language] = draft?.sourceCode ?? starterFor(data, language);
+    const serverDraft = data.drafts.find((entry) => entry.language === language);
+    const localDraft = local?.[language];
+    const localWins =
+      localDraft !== undefined &&
+      (serverDraft === undefined || localDraft.updatedAt > serverDraft.updatedAt);
+    buffers[language] = localWins
+      ? localDraft.sourceCode
+      : (serverDraft?.sourceCode ?? starterFor(data, language));
   }
   return buffers;
+}
+
+// Feature detection is a one-shot read of the environment, so it is cached
+// and served as an external store: the server snapshot is null and the client
+// snapshot is a stable object, which keeps it out of an effect.
+let capabilitiesCache: RuntimeCapabilities | null = null;
+const noopSubscribe = () => () => {};
+
+function capabilitiesSnapshot(): RuntimeCapabilities {
+  capabilitiesCache ??= detectRuntimeCapabilities();
+  return capabilitiesCache;
 }
 
 export function Workspace({ data }: { data: WorkspaceData }) {
@@ -116,9 +147,11 @@ export function Workspace({ data }: { data: WorkspaceData }) {
   const { assignment, interview, question, questions } = data;
 
   const [language, setLanguage] = React.useState<Language>(() => initialLanguage(data));
-  const [buffers, setBuffers] = React.useState<Record<string, string>>(() => initialBuffers(data));
+  // Only the candidate's own edits live in state; the starting buffer is
+  // derived, so a localStorage draft can appear after hydration without
+  // clobbering anything already typed.
+  const [edits, setEdits] = React.useState<Record<string, string>>({});
   const [run, setRun] = React.useState<RunState>(IDLE_RUN);
-  const [capabilities, setCapabilities] = React.useState<RuntimeCapabilities | null>(null);
   const [pythonError, setPythonError] = React.useState<string | null>(null);
   const [pythonWarming, setPythonWarming] = React.useState(false);
   const [submitOpen, setSubmitOpen] = React.useState(false);
@@ -132,38 +165,18 @@ export function Workspace({ data }: { data: WorkspaceData }) {
   const autosave = useDraftAutosave(question.id);
   const countdown = useCountdown(assignment.startedAt, interview.durationMinutes);
 
-  const source = buffers[language] ?? '';
-  const sourceRef = React.useRef(source);
-  sourceRef.current = source;
+  const localDrafts = useLocalDrafts(question.id, question.supportedLanguages);
+  const baseBuffers = React.useMemo(() => resolveBuffers(data, localDrafts), [data, localDrafts]);
+  const capabilities = React.useSyncExternalStore(
+    noopSubscribe,
+    capabilitiesSnapshot,
+    () => null,
+  );
+
+  const source = edits[language] ?? baseBuffers[language] ?? '';
   const runningRef = React.useRef(false);
+  const runIdRef = React.useRef(0);
   const abortRef = React.useRef<AbortController | null>(null);
-
-  // localStorage is read after mount, never during render: the server has no
-  // idea what is in it and a differing first paint is a hydration error. If
-  // the local copy is newer than the server draft, the candidate went offline
-  // after their last successful save — prefer the newer one.
-  React.useEffect(() => {
-    setBuffers((current) => {
-      let changed = false;
-      const next = { ...current };
-      for (const lang of question.supportedLanguages) {
-        const local = readLocalDraft(question.id, lang);
-        if (!local) continue;
-        const serverDraft = data.drafts.find((entry) => entry.language === lang);
-        const serverIsNewer = serverDraft !== undefined && serverDraft.updatedAt >= local.updatedAt;
-        if (serverIsNewer || local.sourceCode === next[lang]) continue;
-        next[lang] = local.sourceCode;
-        changed = true;
-      }
-      return changed ? next : current;
-    });
-    // Question-scoped: re-running on every render would fight the editor.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [question.id]);
-
-  React.useEffect(() => {
-    setCapabilities(detectRuntimeCapabilities());
-  }, []);
 
   // Pyodide is ~10MB. It is fetched when the candidate chooses Python and
   // never for a JavaScript-only session — hence the effect on `language`
@@ -198,7 +211,7 @@ export function Workspace({ data }: { data: WorkspaceData }) {
 
   const handleChange = React.useCallback(
     (next: string) => {
-      setBuffers((current) => ({ ...current, [language]: next }));
+      setEdits((current) => ({ ...current, [language]: next }));
       writeLocalDraft(question.id, language, next);
       autosave.queue(language, next);
     },
@@ -216,7 +229,7 @@ export function Workspace({ data }: { data: WorkspaceData }) {
 
   const resetToStarter = () => {
     const starter = starterFor(data, language);
-    setBuffers((current) => ({ ...current, [language]: starter }));
+    setEdits((current) => ({ ...current, [language]: starter }));
     writeLocalDraft(question.id, language, starter);
     autosave.queue(language, starter);
     setConfirmReset(false);
@@ -247,12 +260,14 @@ export function Workspace({ data }: { data: WorkspaceData }) {
     runningRef.current = true;
     const controller = new AbortController();
     abortRef.current = controller;
-    const sourceCode = sourceRef.current;
+    const sourceCode = source;
     const currentLanguage = language;
     const total = question.testCases.length;
+    const runId = (runIdRef.current += 1);
 
     setRecorded(null);
     setRun({
+      id: runId,
       phase: 'running',
       result: null,
       progress: { completed: 0, total },
@@ -285,11 +300,12 @@ export function Workspace({ data }: { data: WorkspaceData }) {
       });
 
       if (controller.signal.aborted) {
-        setRun({ ...IDLE_RUN, phase: 'cancelled' });
+        setRun({ ...IDLE_RUN, id: runId, phase: 'cancelled' });
         return null;
       }
 
       setRun({
+        id: runId,
         phase: 'complete',
         result,
         progress: { completed: result.tests.length, total: result.tests.length },
@@ -300,16 +316,16 @@ export function Workspace({ data }: { data: WorkspaceData }) {
       return result;
     } catch (error) {
       if (controller.signal.aborted) {
-        setRun({ ...IDLE_RUN, phase: 'cancelled' });
+        setRun({ ...IDLE_RUN, id: runId, phase: 'cancelled' });
         return null;
       }
-      setRun({ ...IDLE_RUN, phase: 'error', message: messageOf(error) });
+      setRun({ ...IDLE_RUN, id: runId, phase: 'error', message: messageOf(error) });
       return null;
     } finally {
       runningRef.current = false;
       abortRef.current = null;
     }
-  }, [canRun, language, question.testCases, question.timeLimitMs]);
+  }, [canRun, language, question.testCases, question.timeLimitMs, source]);
 
   const handleRun = React.useCallback(() => {
     void executeTests();

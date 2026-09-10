@@ -78,25 +78,32 @@ RUN npm run build
 # `tsx` comes along for `npm run db:seed` (see docker-compose.yml).
 FROM base AS migrator
 WORKDIR /migrator
-COPY package.json ./app-package.json
+COPY package-lock.json ./app-package-lock.json
+# Exact locked versions, not the caret ranges from package.json, so the CLI in
+# the image is the same one the repository was tested against.
 RUN set -eux; \
-    PRISMA_VERSION="$(node -p "require('./app-package.json').devDependencies.prisma")"; \
-    DOTENV_VERSION="$(node -p "require('./app-package.json').devDependencies.dotenv")"; \
-    TSX_VERSION="$(node -p "require('./app-package.json').devDependencies.tsx")"; \
+    v() { node -p "require('./app-package-lock.json').packages['node_modules/$1'].version"; }; \
+    PRISMA_VERSION="$(v prisma)"; \
+    DOTENV_VERSION="$(v dotenv)"; \
+    TSX_VERSION="$(v tsx)"; \
     npm init -y > /dev/null; \
     npm install --no-audit --no-fund --loglevel=error \
       "prisma@${PRISMA_VERSION}" "dotenv@${DOTENV_VERSION}" "tsx@${TSX_VERSION}"; \
-    rm -f app-package.json
+    rm -f app-package-lock.json
 
 # ---------------------------------------------------------------------------
 # runner
 # ---------------------------------------------------------------------------
 FROM base AS runner
 
+# CHECKPOINT_DISABLE stops the Prisma CLI phoning home for an update check on
+# every boot, which would otherwise add a network round-trip to startup.
 ENV NODE_ENV=production \
     PORT=3000 \
     HOSTNAME=0.0.0.0 \
-    RUN_MIGRATIONS=true
+    RUN_MIGRATIONS=true \
+    CHECKPOINT_DISABLE=1 \
+    PRISMA_HIDE_UPDATE_MESSAGE=1
 
 # The Prisma CLI is installed at the filesystem root, NOT merged into
 # /app/node_modules. Node resolves a bare import by walking up from the

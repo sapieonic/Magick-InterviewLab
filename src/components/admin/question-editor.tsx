@@ -60,6 +60,22 @@ function emptyRow(): TestCaseRow {
   return { key: newKey(), input: '', expectedOutput: '', description: '', weight: 1 };
 }
 
+const TEST_FIELD_LABELS: Readonly<Record<string, string>> = {
+  input: 'input',
+  expectedOutput: 'expected output',
+  description: 'description',
+  weight: 'weight',
+};
+
+/** `testCases.2.weight` reads as "Test 3 — weight". */
+function describeErrorPath(path: string): string {
+  const match = /^testCases\.(\d+)(?:\.(\w+))?$/.exec(path);
+  if (!match) return path;
+  const position = Number(match[1]) + 1;
+  const field = match[2];
+  return field ? `Test ${position} — ${TEST_FIELD_LABELS[field] ?? field}` : `Test ${position}`;
+}
+
 export function QuestionEditor({ initial }: { initial: QuestionEditorValues }) {
   const router = useRouter();
   const uid = useId();
@@ -153,13 +169,21 @@ export function QuestionEditor({ initial }: { initial: QuestionEditorValues }) {
   }
 
   // Anything the form does not render next to a field — most usefully the
-  // per-test-case messages, whose paths look like `testCases.2.weight`.
-  const unmappedErrors = Object.entries(fieldErrors).filter(
-    ([key]) =>
-      !['title', 'description', 'difficulty', 'supportedLanguages', 'timeLimitMs', 'memoryLimitMb'].includes(
-        key,
-      ),
-  );
+  // per-test-case messages, whose Zod paths look like `testCases.2.weight`
+  // and mean nothing to the person reading them.
+  const unmappedErrors = Object.entries(fieldErrors)
+    .filter(
+      ([key]) =>
+        ![
+          'title',
+          'description',
+          'difficulty',
+          'supportedLanguages',
+          'timeLimitMs',
+          'memoryLimitMb',
+        ].includes(key),
+    )
+    .map(([key, messages]) => [describeErrorPath(key), messages] as const);
 
   return (
     <div className="space-y-5">
@@ -167,9 +191,9 @@ export function QuestionEditor({ initial }: { initial: QuestionEditorValues }) {
         <Alert tone="error" title={error}>
           {unmappedErrors.length > 0 ? (
             <ul className="mt-1 list-disc pl-4">
-              {unmappedErrors.map(([key, messages]) => (
-                <li key={key}>
-                  <span className="font-mono text-[12px]">{key}</span>: {messages.join(' ')}
+              {unmappedErrors.map(([label, messages]) => (
+                <li key={label}>
+                  <span className="font-medium">{label}</span>: {messages.join(' ')}
                 </li>
               ))}
             </ul>

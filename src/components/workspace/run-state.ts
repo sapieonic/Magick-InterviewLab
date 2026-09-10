@@ -3,6 +3,12 @@ import type { ExecutionResult, Language, TestResult } from '@/features/execution
 export type RunPhase = 'idle' | 'running' | 'complete' | 'cancelled' | 'error';
 
 export interface RunState {
+  /**
+   * Increments on every run. The results list is keyed on it so a second run
+   * remounts the rows — without that, a row that failed last time and passes
+   * now would keep the expanded state of the previous run.
+   */
+  id: number;
   phase: RunPhase;
   result: ExecutionResult | null;
   progress: { completed: number; total: number };
@@ -18,6 +24,7 @@ export interface RunState {
 }
 
 export const IDLE_RUN: RunState = {
+  id: 0,
   phase: 'idle',
   result: null,
   progress: { completed: 0, total: 0 },

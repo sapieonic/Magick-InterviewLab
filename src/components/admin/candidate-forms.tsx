@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useActionState, useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { toast } from 'sonner';
 import { Copy, KeyRound, RefreshCw } from 'lucide-react';
 import type { InterviewStatus } from '@/generated/prisma/enums';
@@ -112,7 +112,6 @@ function TemporaryPasswordField({
         <Button
           type="button"
           variant="outline"
-          size="default"
           className="shrink-0"
           onClick={() => onChange(generatePassword())}
         >
@@ -129,23 +128,18 @@ export function CandidateCreateForm({
 }: {
   interviews: Array<{ id: string; title: string; status: InterviewStatus }>;
 }) {
-  const [state, formAction] = useActionState(createCandidateAction, null);
+  const [state, setState] = useState<ActionResult<CreatedCandidate> | null>(null);
   const [password, setPassword] = useState('');
   const [revealed, setRevealed] = useState<string | null>(null);
-  // Captured on change rather than read from state inside the effect, so the
-  // effect can depend on the action result alone.
-  const typed = useRef('');
-  const reported = useRef<ActionResult<CreatedCandidate> | null>(null);
 
-  useEffect(() => {
-    if (!state || state === reported.current) return;
-    reported.current = state;
-    if (state.ok) {
-      setRevealed(typed.current);
-      typed.current = '';
+  async function submit(formData: FormData): Promise<void> {
+    const result = await createCandidateAction(null, formData);
+    setState(result);
+    if (result.ok) {
+      setRevealed(password);
       setPassword('');
     }
-  }, [state]);
+  }
 
   const fieldErrors = state && !state.ok ? state.fieldErrors : undefined;
   const created = state?.ok ? state.data : null;
@@ -171,7 +165,7 @@ export function CandidateCreateForm({
             size="sm"
             variant="ghost"
             onClick={() => {
-              reported.current = null;
+              setState(null);
               setRevealed(null);
             }}
           >
@@ -183,7 +177,7 @@ export function CandidateCreateForm({
   }
 
   return (
-    <form action={formAction} className="space-y-4" noValidate>
+    <form action={submit} className="space-y-4" noValidate>
       <FormAlert state={state} />
 
       <Field id="name" label="Name" errors={fieldErrors?.name}>
@@ -211,10 +205,7 @@ export function CandidateCreateForm({
 
       <TemporaryPasswordField
         value={password}
-        onChange={(v) => {
-          setPassword(v);
-          typed.current = v;
-        }}
+        onChange={setPassword}
         errors={fieldErrors?.temporaryPassword}
       />
 
@@ -250,11 +241,16 @@ export function CandidateProfileForm({
 }: {
   candidate: { id: string; name: string; email: string };
 }) {
-  const [state, formAction] = useActionState(updateCandidateAction, null);
+  const [state, setState] = useState<ActionResult<undefined> | null>(null);
+
+  async function submit(formData: FormData): Promise<void> {
+    setState(await updateCandidateAction(null, formData));
+  }
+
   const fieldErrors = state && !state.ok ? state.fieldErrors : undefined;
 
   return (
-    <form action={formAction} className="space-y-4" noValidate>
+    <form action={submit} className="space-y-4" noValidate>
       <input type="hidden" name="id" value={candidate.id} />
       <FormAlert state={state} success="Profile updated." />
 
@@ -286,26 +282,23 @@ export function CandidateProfileForm({
 }
 
 export function CandidatePasswordResetForm({ candidateId }: { candidateId: string }) {
-  const [state, formAction] = useActionState(resetCandidatePasswordAction, null);
+  const [state, setState] = useState<ActionResult<undefined> | null>(null);
   const [password, setPassword] = useState('');
   const [revealed, setRevealed] = useState<string | null>(null);
-  const typed = useRef('');
-  const reported = useRef<ActionResult<undefined> | null>(null);
 
-  useEffect(() => {
-    if (!state || state === reported.current) return;
-    reported.current = state;
-    if (state.ok) {
-      setRevealed(typed.current);
-      typed.current = '';
+  async function submit(formData: FormData): Promise<void> {
+    const result = await resetCandidatePasswordAction(null, formData);
+    setState(result);
+    if (result.ok) {
+      setRevealed(password);
       setPassword('');
     }
-  }, [state]);
+  }
 
   const fieldErrors = state && !state.ok ? state.fieldErrors : undefined;
 
   return (
-    <form action={formAction} className="space-y-4" noValidate>
+    <form action={submit} className="space-y-4" noValidate>
       <input type="hidden" name="id" value={candidateId} />
 
       {revealed ? (
@@ -322,10 +315,7 @@ export function CandidatePasswordResetForm({ candidateId }: { candidateId: strin
       <TemporaryPasswordField
         id="reset-password"
         value={password}
-        onChange={(v) => {
-          setPassword(v);
-          typed.current = v;
-        }}
+        onChange={setPassword}
         errors={fieldErrors?.temporaryPassword}
       />
 

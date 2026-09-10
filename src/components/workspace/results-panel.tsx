@@ -173,12 +173,17 @@ export function ResultsPanel({ state, onCancel, blockedReason }: ResultsPanelPro
       </p>
 
       <div className="scrollbar-thin min-h-0 flex-1 overflow-y-auto">
+        {/* A blocked runtime is a banner, not a replacement: a candidate who
+            switches to Python after a green JavaScript run should still be
+            able to read that run. */}
         {blockedReason ? (
-          <div className="flex items-start gap-2.5 px-3 py-3">
+          <div className="flex items-start gap-2.5 border-b px-3 py-3">
             <AlertTriangle className="text-warning mt-px size-4 shrink-0" aria-hidden />
             <p className="text-[13px]">{blockedReason}</p>
           </div>
-        ) : phase === 'running' ? (
+        ) : null}
+
+        {phase === 'running' ? (
           <div className="flex items-center gap-2.5 px-3 py-4">
             <Loader2 className="text-muted-foreground size-4 animate-spin" aria-hidden />
             <p className="text-[13px]">
@@ -188,13 +193,15 @@ export function ResultsPanel({ state, onCancel, blockedReason }: ResultsPanelPro
             </p>
           </div>
         ) : phase === 'idle' ? (
-          <p className="text-muted-foreground px-3 py-4 text-[13px]">
-            No run yet. Press{' '}
-            <kbd className="bg-muted rounded border px-1 py-0.5 font-mono text-[11px]">
-              Ctrl/Cmd + Enter
-            </kbd>{' '}
-            or use Run tests.
-          </p>
+          blockedReason ? null : (
+            <p className="text-muted-foreground px-3 py-4 text-[13px]">
+              No run yet. Press{' '}
+              <kbd className="bg-muted rounded border px-1 py-0.5 font-mono text-[11px]">
+                Ctrl/Cmd + Enter
+              </kbd>{' '}
+              or use Run tests.
+            </p>
+          )
         ) : phase === 'cancelled' ? (
           <p className="text-muted-foreground px-3 py-4 text-[13px]">
             Run cancelled. Nothing was recorded.
@@ -234,7 +241,7 @@ export function ResultsPanel({ state, onCancel, blockedReason }: ResultsPanelPro
                 This question has no test cases yet, so there is nothing to check against.
               </p>
             ) : (
-              <ul>
+              <ul key={state.id}>
                 {result.tests.map((test, index) => (
                   <TestRow key={test.testCaseId} test={test} index={index} />
                 ))}

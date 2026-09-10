@@ -1,0 +1,51 @@
+# Keep the build context small and, more importantly, keep secrets and
+# host-built artifacts out of it.
+
+# Dependencies and build output are produced inside the image.
+node_modules
+**/node_modules
+.next
+out
+dist
+build
+*.tsbuildinfo
+next-env.d.ts
+
+# The Prisma client is regenerated in the builder stage; a host-built copy
+# could target a different platform.
+src/generated
+
+# Secrets. This matters more than it looks: `output: 'standalone'` copies any
+# .env file it finds into .next/standalone, so a .env in the build context
+# would be baked into the published image.
+.env
+.env.*
+
+# VCS and CI.
+.git
+.gitignore
+.github
+
+# Tests and their artifacts — the image serves the app, it does not run them.
+test
+playwright.config.ts
+vitest.config.ts
+test-results
+playwright-report
+blob-report
+.playwright
+coverage
+
+# Local database volume (see .gitignore) and editor/OS noise.
+.pgdata
+.DS_Store
+.idea
+.vscode
+*.log
+npm-debug.log*
+
+# Docker's own files.
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.*.yml
