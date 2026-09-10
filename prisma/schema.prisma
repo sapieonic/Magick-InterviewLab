@@ -1,0 +1,225 @@
+// MagicVoice InterviewLab — data model
+// Docs: https://www.prisma.io/docs
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+  runtime  = "nodejs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN
+  CANDIDATE
+}
+
+enum Difficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+enum Language {
+  JAVASCRIPT
+  PYTHON
+}
+
+enum InterviewStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum AssignmentStatus {
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+}
+
+/// A person who can sign in. Admins are bootstrapped from env; candidates are
+/// created by an admin with an explicitly chosen temporary password.
+model User {
+  id                 String    @id @default(cuid())
+  name               String
+  email              String    @unique
+  passwordHash       String
+  role               Role      @default(CANDIDATE)
+  isActive           Boolean   @default(true)
+  mustChangePassword Boolean   @default(false)
+  lastLoginAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  sessions    Session[]
+  assignments InterviewAssignment[]
+  submissions Submission[]
+  codeDrafts  CodeDraft[]
+
+  @@index([role])
+  @@index([isActive])
+  @@map("users")
+}
+
+/// Server-side session record. The cookie carries only an opaque token hash
+/// lookup key, so sessions are revocable and nothing sensitive lives client-side.
+model Session {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  userAgent String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model Interview {
+  id                       String          @id @default(cuid())
+  title                    String
+  description              String          @default("")
+  status                   InterviewStatus @default(DRAFT)
+  /// Total wall-clock budget in minutes. Null = untimed.
+  durationMinutes          Int?
+  /// When false, a candidate may only submit once per question.
+  allowMultipleSubmissions Boolean         @default(true)
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
+
+  questions   InterviewQuestion[]
+  assignments InterviewAssignment[]
+  submissions Submission[]
+
+  @@index([status])
+  @@map("interviews")
+}
+
+model Question {
+  id                 String     @id @default(cuid())
+  title              String
+  /// Markdown.
+  description        String     @default("")
+  difficulty         Difficulty @default(EASY)
+  /// Subset of Language this question may be solved in.
+  supportedLanguages Language[] @default([JAVASCRIPT, PYTHON])
+  /// Per-language starter code, keyed by lowercase language id.
+  starterCode        Json       @default("{}")
+  /// Per-test wall-clock limit in milliseconds.
+  timeLimitMs        Int        @default(5000)
+  /// Advisory only in the MVP (browser execution cannot enforce it).
+  memoryLimitMb      Int        @default(128)
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  testCases   TestCase[]
+  interviews  InterviewQuestion[]
+  submissions Submission[]
+  codeDrafts  CodeDraft[]
+
+  @@index([difficulty])
+  @@map("questions")
+}
+
+model InterviewQuestion {
+  id          String @id @default(cuid())
+  interviewId String
+  questionId  String
+  position    Int
+
+  interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  question  Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([interviewId, questionId])
+  @@index([interviewId, position])
+  @@map("interview_questions")
+}
+
+model TestCase {
+  id             String  @id @default(cuid())
+  questionId     String
+  /// Fed to the program on stdin.
+  input          String  @default("")
+  /// Compared against trimmed stdout.
+  expectedOutput String  @default("")
+  description    String  @default("")
+  weight         Int     @default(1)
+  /// Reserved for the future remote executor; always false in the MVP because
+  /// browser execution cannot keep a test secret. See README.
+  isHidden       Boolean @default(false)
+  position       Int     @default(0)
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId, position])
+  @@map("test_cases")
+}
+
+model InterviewAssignment {
+  id          String           @id @default(cuid())
+  interviewId String
+  candidateId String
+  status      AssignmentStatus @default(ASSIGNED)
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  candidate User      @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+
+  @@unique([interviewId, candidateId])
+  @@index([candidateId])
+  @@index([status])
+  @@map("interview_assignments")
+}
+
+model Submission {
+  id          String   @id @default(cuid())
+  candidateId String
+  interviewId String
+  questionId  String
+  language    Language
+  sourceCode  String
+  /// 0..100, weighted by test weight.
+  score       Int      @default(0)
+  passedCount Int      @default(0)
+  totalCount  Int      @default(0)
+  /// Serialized TestResult[] plus stdout/stderr summary.
+  results     Json     @default("{}")
+  submittedAt DateTime @default(now())
+
+  candidate User      @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  question  Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([candidateId, submittedAt])
+  @@index([interviewId, questionId])
+  @@index([questionId])
+  @@map("submissions")
+}
+
+/// Autosaved editor buffer so an accidental refresh never loses work.
+model CodeDraft {
+  id          String   @id @default(cuid())
+  candidateId String
+  questionId  String
+  language    Language
+  sourceCode  String
+  updatedAt   DateTime @updatedAt
+
+  /// Real foreign keys, not bare ids. Without them a deleted candidate or
+  /// question left its drafts behind forever — and it did: three orphaned
+  /// rows accumulated from test runs before this was caught.
+  candidate User     @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  question  Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([candidateId, questionId, language])
+  @@index([questionId])
+  @@map("code_drafts")
+}

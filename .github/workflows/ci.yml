@@ -1,0 +1,236 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# A force-push mid-run should cancel the superseded run rather than race it.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NEXT_TELEMETRY_DISABLED: '1'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Fast feedback: types, lint, formatting and the unit suite. No database —
+  # the unit tests mock Prisma, and `prisma generate` only reads the schema.
+  # ---------------------------------------------------------------------------
+  checks:
+    name: Typecheck, lint, unit tests
+    runs-on: ubuntu-latest
+    env:
+      # `prisma.config.ts` resolves env('DATABASE_URL') during generation. This
+      # job never opens a connection.
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/unused?schema=public
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The generated client is gitignored, and `tsc` cannot resolve
+      # `@/generated/prisma/*` without it, so this has to come before typecheck.
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Check formatting
+        run: npm run format:check
+
+      - name: Unit tests
+        run: npm test
+
+  # ---------------------------------------------------------------------------
+  # The end-to-end suite drives a real production build against a real Postgres.
+  # ---------------------------------------------------------------------------
+  e2e:
+    name: E2E (build + Playwright)
+    runs-on: ubuntu-latest
+    continue-on-error: false
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: interviewlab
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d interviewlab"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/interviewlab?schema=public
+
+      # `test/e2e/helpers.ts` signs in with ADMIN_EMAIL / ADMIN_PASSWORD, so the
+      # seeded account must be the hash of exactly this password. The hash is
+      # computed below rather than committed: `next start` forces
+      # NODE_ENV=production, and the bootstrap refuses a plaintext
+      # ADMIN_PASSWORD there, so ADMIN_PASSWORD_HASH is not optional.
+      ADMIN_EMAIL: admin@magicvoice.local
+      ADMIN_PASSWORD: E2EAdminPass!2345
+      ADMIN_NAME: MagicVoice Admin
+
+      SEED_CANDIDATE_EMAIL: candidate@magicvoice.local
+      SEED_CANDIDATE_PASSWORD: E2ECandidatePass!2345
+      SEED_DEMO_DATA: 'true'
+
+      # The production build would otherwise mark the session cookie Secure,
+      # and the suite talks plain http to 127.0.0.1.
+      COOKIE_SECURE: 'false'
+      SESSION_TTL_HOURS: '12'
+
+      E2E_PORT: '3100'
+      NEXT_PUBLIC_APP_URL: http://127.0.0.1:3100
+      NEXT_PUBLIC_APP_NAME: MagicVoice
+
+      # Self-hosted, not the CDN default. `python-execution.spec.ts` boots
+      # real Pyodide, so with the default URL a jsDelivr blip fails the build
+      # for a reason that has nothing to do with the change under test — the
+      # Python suite would double as a CDN uptime check. Staged by the step
+      # below; NEXT_PUBLIC_* is inlined at build time, so it must be set
+      # before `npm run build`.
+      NEXT_PUBLIC_PYODIDE_INDEX_URL: /pyodide/
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Apply migrations
+        run: npx prisma migrate deploy
+
+      # Uses the repository's own hashing script so the Argon2 parameters can
+      # never drift from the ones the app verifies with.
+      - name: Hash the E2E admin password
+        run: |
+          set -euo pipefail
+          # The script prints `ADMIN_PASSWORD_HASH='<digest>'` on stdout and its
+          # instructions on stderr. An Argon2 digest never contains a quote, so
+          # stripping quotes and the key prefix is unambiguous.
+          line="$(npm run -s hash-password -- "$ADMIN_PASSWORD" | tr -d "'")"
+          hash="${line#ADMIN_PASSWORD_HASH=}"
+          case "$hash" in
+            '$argon2id$'*) ;;
+            *) echo "hash-password produced unexpected output: $line" >&2; exit 1 ;;
+          esac
+          echo "ADMIN_PASSWORD_HASH=$hash" >> "$GITHUB_ENV"
+
+      - name: Seed
+        run: npm run db:seed
+
+      - name: Stage the Pyodide runtime for self-hosting
+        run: npm run fetch:pyodide
+
+      - name: Build
+        run: npm run build
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      # playwright.config.ts starts the server itself (`npm run start` on
+      # E2E_PORT) unless E2E_BASE_URL is set.
+      - name: Run Playwright
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # The deployment image, built and actually started against a database. The
+  # runtime layout is not something the other jobs exercise (standalone output,
+  # the root-level Prisma CLI, the migrating entrypoint), so it is checked here
+  # rather than assumed.
+  # ---------------------------------------------------------------------------
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: interviewlab
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d interviewlab"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t interviewlab:ci .
+
+      # `--network host` so the container reaches the service container, which
+      # is published on the runner's localhost.
+      - name: Start the container against an empty database
+        run: |
+          docker run -d --name interviewlab-smoke --network host \
+            -e DATABASE_URL='postgresql://postgres:postgres@127.0.0.1:5432/interviewlab?schema=public' \
+            -e COOKIE_SECURE=false \
+            -e PORT=3000 \
+            interviewlab:ci
+
+      - name: Wait for the app to serve /login
+        run: |
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3000/login > /dev/null; then
+              echo 'app is serving'
+              exit 0
+            fi
+            sleep 2
+          done
+          echo 'app never became reachable' >&2
+          exit 1
+
+      # Proves the entrypoint's migrate step actually created the schema.
+      - name: Verify migrations were applied
+        run: |
+          docker exec interviewlab-smoke /node_modules/.bin/prisma migrate status
+
+      - name: Container logs
+        if: always()
+        run: docker logs interviewlab-smoke || true
+
+      - name: Clean up
+        if: always()
+        run: docker rm -f interviewlab-smoke || true

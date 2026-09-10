@@ -1,0 +1,121 @@
+# MagicVoice InterviewLab — one-command deployment.
+#
+#   1. cp .env.example .env
+#   2. npm run hash-password -- 'choose-an-admin-password'
+#      …and paste the printed line into .env as ADMIN_PASSWORD_HASH.
+#      Compose reads .env automatically for the ${VAR} defaults below.
+#   3. docker compose up --build
+#   4. http://localhost:3000
+#
+# Migrations are applied by the container's entrypoint, so an empty database
+# is fine. Set RUN_MIGRATIONS=false to take that over yourself.
+#
+# Seeding the demo interview, questions and candidate:
+#
+#   docker compose exec app npm run db:seed
+#
+# That works because `npm run` puts every ancestor `node_modules/.bin` on PATH,
+# and the image installs `tsx` at /node_modules/.bin (the app's own standalone
+# bundle contains no devDependencies). If your npm ever stops doing that, the
+# direct equivalent is:
+#
+#   docker compose exec app /node_modules/.bin/tsx prisma/seed.ts
+#
+# or simply start the stack once with RUN_SEED=true.
+#
+# NOTE: Docker is NOT required to work on this project. `npm run dev` against a
+# local Postgres is the documented development path; compose is a deployment
+# convenience.
+
+name: interviewlab
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-interviewlab}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-interviewlab}
+      POSTGRES_DB: ${POSTGRES_DB:-interviewlab}
+    healthcheck:
+      # `-U`/`-d` matter: without them pg_isready probes the `root` role and
+      # reports ready before the init scripts have created the real database.
+      test:
+        [
+          'CMD-SHELL',
+          'pg_isready -U ${POSTGRES_USER:-interviewlab} -d ${POSTGRES_DB:-interviewlab}',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      # Published on 5433 by default so it cannot collide with a Postgres the
+      # developer is already running on 5432 for `npm run dev`.
+      - '${POSTGRES_PORT:-5433}:5432'
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* is inlined into the browser bundle at build time, so it
+        # has to be supplied here as well as in `environment` below — a runtime
+        # value alone would never reach the client.
+        NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-MagicVoice}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+        NEXT_PUBLIC_PYODIDE_INDEX_URL: ${NEXT_PUBLIC_PYODIDE_INDEX_URL:-https://cdn.jsdelivr.net/pyodide/v314.0.6/full/}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Hard-coded to the `db` service, NOT ${DATABASE_URL:-...}.
+      #
+      # Compose interpolates ${VAR} from ./.env, and .env.example ships a
+      # DATABASE_URL pointing at localhost for the host-Postgres workflow.
+      # The default-substitution form therefore handed the app container
+      # "localhost:5432" — itself, where nothing listens — and the entrypoint
+      # retried migrations ten times and exited, which `restart:
+      # unless-stopped` turned into a crash loop on the documented
+      # quick-start. Inside the compose network the database is always `db`.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-interviewlab}:${POSTGRES_PASSWORD:-interviewlab}@db:5432/${POSTGRES_DB:-interviewlab}?schema=public
+
+      # --- startup behaviour ---
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-true}
+      RUN_SEED: ${RUN_SEED:-false}
+
+      # --- bootstrap admin ---
+      # A hash is required, not a plaintext password: the standalone server
+      # forces NODE_ENV=production, and the bootstrap deliberately refuses
+      # ADMIN_PASSWORD in production. Leave the hash empty and the app starts
+      # fine but logs a warning and creates no admin.
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@magicvoice.local}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
+      ADMIN_NAME: ${ADMIN_NAME:-MagicVoice Admin}
+
+      # --- sessions ---
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
+      # Default OFF on purpose. The image runs as NODE_ENV=production, which
+      # would otherwise mark the session cookie Secure — and a Secure cookie is
+      # dropped over plain http://, so the default `docker compose up` would
+      # look like "login silently does nothing". Set this to true (or unset it)
+      # the moment you put the app behind TLS.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+
+      # --- seed data ---
+      SEED_CANDIDATE_EMAIL: ${SEED_CANDIDATE_EMAIL:-candidate@magicvoice.local}
+      SEED_CANDIDATE_PASSWORD: ${SEED_CANDIDATE_PASSWORD:-}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+
+      # --- public (read server-side; the browser gets the build-arg values) ---
+      NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-MagicVoice}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      NEXT_PUBLIC_PYODIDE_INDEX_URL: ${NEXT_PUBLIC_PYODIDE_INDEX_URL:-https://cdn.jsdelivr.net/pyodide/v314.0.6/full/}
+    ports:
+      - '${APP_PORT:-3000}:3000'
+
+volumes:
+  db-data:
