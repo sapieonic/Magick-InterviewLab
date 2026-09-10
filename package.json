@@ -29,7 +29,8 @@
     "lint:fix": "eslint . --fix",
     "prebuild": "node scripts/copy-monaco.mjs",
     "predev": "node scripts/copy-monaco.mjs",
-    "fetch:pyodide": "node scripts/fetch-pyodide.mjs"
+    "fetch:pyodide": "node scripts/fetch-pyodide.mjs",
+    "postinstall": "prisma generate && node scripts/copy-monaco.mjs"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",

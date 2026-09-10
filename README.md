@@ -50,11 +50,16 @@ Docker is **not** required for local development.
 
 ```bash
 git clone <this-repo> && cd Magick-InterviewLab
-npm install
+npm install                 # also generates the Prisma client and stages Monaco
 cp .env.example .env        # then edit DATABASE_URL and the admin settings
-npm run db:setup            # prisma generate + migrate deploy + seed
+npm run db:setup            # migrate deploy + seed
 npm run dev                 # http://localhost:3000
 ```
+
+`npm install` runs a `postinstall` that generates the Prisma client and copies
+the Monaco distribution into `public/monaco`. Both are git-ignored build
+outputs, so without it a fresh clone cannot even typecheck — `src/generated`
+would not exist.
 
 `npm run db:setup` prints the seeded credentials **once**. Nothing is
 hard-coded in the repository — see [Environment variables](#environment-variables).
