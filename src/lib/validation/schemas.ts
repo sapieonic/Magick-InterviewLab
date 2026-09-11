@@ -140,6 +140,39 @@ export const questionInputSchema = z.object({
   testCases: z.array(testCaseInputSchema).max(50).default([]),
 });
 
+/**
+ * A question inside an import manifest. Identical to `questionInputSchema`, but
+ * `.strict()` — an unknown key on an entry (a typo like `timeLimtMs` or
+ * `dificulty`) is a hard error rather than being silently stripped and
+ * defaulted, which for a hand-written bulk file is a data-quality trap. Nested
+ * test cases are strict for the same reason. Every default still applies, so an
+ * entry may omit anything but a title.
+ */
+const manifestQuestionSchema = questionInputSchema
+  .extend({
+    testCases: z.array(testCaseInputSchema.strict()).max(50).default([]),
+  })
+  .strict();
+
+/**
+ * Bulk import. A manifest is either a bare array of questions or an object with
+ * a `questions` array. The envelope stays lenient — an unknown top-level key (a
+ * future `metadata`, say) is ignored and `version` accepts any number and is
+ * otherwise unused — so a manifest from a later exporter still imports; the
+ * per-entry strictness above is where typos are caught. Every Zod error path
+ * stays rooted at `questions.<i>...` for a legible per-entry message.
+ */
+export const questionManifestSchema = z.preprocess(
+  (value) => (Array.isArray(value) ? { questions: value } : value),
+  z.object({
+    version: z.number().int().positive().optional(),
+    questions: z
+      .array(manifestQuestionSchema)
+      .min(1, 'The manifest contains no questions.')
+      .max(200, 'A manifest may hold at most 200 questions.'),
+  }),
+);
+
 // --- submissions -----------------------------------------------------------
 
 export const testResultSchema = z.object({
@@ -175,4 +208,5 @@ export type CreateCandidateInput = z.infer<typeof createCandidateSchema>;
 export type InterviewInput = z.infer<typeof interviewInputSchema>;
 export type QuestionInput = z.infer<typeof questionInputSchema>;
 export type TestCaseInput = z.infer<typeof testCaseInputSchema>;
+export type QuestionManifestInput = z.infer<typeof questionManifestSchema>;
 export type CreateSubmissionInput = z.infer<typeof createSubmissionSchema>;

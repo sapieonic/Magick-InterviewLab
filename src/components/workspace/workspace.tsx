@@ -4,7 +4,7 @@ import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { AlertTriangle, ArrowRight, Check, Play, RotateCcw, Send } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Check, Play, RotateCcw, Send, WifiOff } from 'lucide-react';
 import type {
   ExecutionResult,
   Language,
@@ -28,10 +28,14 @@ import { SplitPane } from './split-pane';
 import { SubmitDialog } from './submit-dialog';
 import { TimerChip, useCountdown } from './interview-timer';
 import { IDLE_RUN, runMatches, type RunState } from './run-state';
+import { shouldAutoSubmit } from './auto-submit';
+import { readRunCache, writeRunCache } from './run-cache';
+import { useOnlineStatus } from './use-online-status';
 import {
   useDraftAutosave,
   useLocalDrafts,
   writeLocalDraft,
+  type DraftAutosave,
   type LocalDraft,
 } from './use-draft-autosave';
 
@@ -141,6 +145,33 @@ function capabilitiesSnapshot(): RuntimeCapabilities {
   return capabilitiesCache;
 }
 
+// The last completed run for a question, restored from localStorage and frozen
+// for the tab — the run equivalent of `useLocalDrafts`. Read through
+// `useSyncExternalStore` with a null server snapshot so SSR and the hydrating
+// render agree and React swaps the real value in on commit, no effect needed.
+const restoredRunCache = new Map<string, RunState | null>();
+
+function useRestoredRun(questionId: string): RunState | null {
+  const getSnapshot = React.useCallback(() => {
+    if (restoredRunCache.has(questionId)) return restoredRunCache.get(questionId) ?? null;
+    const cached = readRunCache(questionId);
+    const value: RunState | null = cached
+      ? {
+          id: 0,
+          phase: 'complete',
+          result: cached.result,
+          progress: { completed: cached.result.tests.length, total: cached.result.tests.length },
+          message: null,
+          language: cached.language,
+          sourceCode: cached.sourceCode,
+        }
+      : null;
+    restoredRunCache.set(questionId, value);
+    return value;
+  }, [questionId]);
+  return React.useSyncExternalStore(noopSubscribe, getSnapshot, () => null);
+}
+
 export function Workspace({ data }: { data: WorkspaceData }) {
   const router = useRouter();
   const isDesktop = useIsDesktop();
@@ -166,6 +197,7 @@ export function Workspace({ data }: { data: WorkspaceData }) {
 
   const autosave = useDraftAutosave(question.id);
   const countdown = useCountdown(assignment.startedAt, interview.durationMinutes);
+  const online = useOnlineStatus();
 
   const localDrafts = useLocalDrafts(question.id, question.supportedLanguages);
   const baseBuffers = React.useMemo(() => resolveBuffers(data, localDrafts), [data, localDrafts]);
@@ -175,6 +207,36 @@ export function Workspace({ data }: { data: WorkspaceData }) {
   const runningRef = React.useRef(false);
   const runIdRef = React.useRef(0);
   const abortRef = React.useRef<AbortController | null>(null);
+
+  // The last completed run for this question, restored from localStorage so a
+  // refresh brings back the results panel (which is client-only state) instead
+  // of blanking it. Read as an external store — server snapshot null, frozen
+  // starting value — exactly like the draft mirror, so there is no hydration
+  // mismatch and no restoring effect. It only ever seeds the *idle* run below.
+  const restoredRun = useRestoredRun(question.id);
+
+  // Latest values for effects that must not re-subscribe on every keystroke.
+  const autosaveRef = React.useRef<DraftAutosave>(autosave);
+  const languageRef = React.useRef<Language>(language);
+  const sourceRef = React.useRef<string>(source);
+  React.useEffect(() => {
+    autosaveRef.current = autosave;
+    languageRef.current = language;
+    sourceRef.current = source;
+  }, [autosave, language, source]);
+
+  // Coming back online: re-push the current buffer so the server copy catches
+  // up with the edits made while offline (which were held in localStorage and,
+  // for failed saves, re-queued). Fires only on the offline→online edge.
+  const prevOnlineRef = React.useRef(online);
+  React.useEffect(() => {
+    const wasOnline = prevOnlineRef.current;
+    prevOnlineRef.current = online;
+    if (online && !wasOnline) {
+      autosaveRef.current.queue(languageRef.current, sourceRef.current);
+      void autosaveRef.current.flush();
+    }
+  }, [online]);
 
   // Pyodide is ~10MB. It is fetched when the candidate chooses Python and
   // never for a JavaScript-only session — hence the effect on `language`
@@ -331,6 +393,11 @@ export function Workspace({ data }: { data: WorkspaceData }) {
         language: currentLanguage,
         sourceCode,
       });
+      // Mirror the finished run so a refresh restores it (client-only state),
+      // and drop the frozen restore-cache entry so a later remount of this
+      // question reads this newer run rather than the one from first load.
+      writeRunCache(question.id, { language: currentLanguage, sourceCode, result });
+      restoredRunCache.delete(question.id);
       return result;
     } catch (error) {
       if (controller.signal.aborted) {
@@ -343,7 +410,7 @@ export function Workspace({ data }: { data: WorkspaceData }) {
       runningRef.current = false;
       abortRef.current = null;
     }
-  }, [canRun, language, question.testCases, question.timeLimitMs, source]);
+  }, [canRun, language, question.id, question.testCases, question.timeLimitMs, source]);
 
   const handleRun = React.useCallback(() => {
     void executeTests();
@@ -351,9 +418,23 @@ export function Workspace({ data }: { data: WorkspaceData }) {
 
   const cancelRun = () => abortRef.current?.abort();
 
-  const reusableRun = runMatches(run, language, source) ? run.result : null;
+  // Until the candidate starts a run this mount, show the run restored from
+  // localStorage — but only for the language currently selected, so the panel
+  // never shows a Python run while the editor is on JavaScript. After a live
+  // run starts, it wins. A restored run is reusable on submit only while its
+  // buffer still matches (`runMatches`).
+  const displayRun =
+    run.phase !== 'idle'
+      ? run
+      : restoredRun && restoredRun.language === language
+        ? restoredRun
+        : IDLE_RUN;
+  const reusableRun = runMatches(displayRun, language, source) ? displayRun.result : null;
 
-  const handleSubmit = async () => {
+  // Returns whether the submission was recorded, so the auto-submit path can
+  // tell the candidate when a deadline submit did not go through (its dialog is
+  // closed, so `submitError` alone would be invisible).
+  const handleSubmit = async (): Promise<boolean> => {
     setSubmitError(null);
     setSubmitting(true);
     try {
@@ -362,12 +443,12 @@ export function Workspace({ data }: { data: WorkspaceData }) {
       if (!execution) {
         if (!canRun && question.testCases.length > 0) {
           setSubmitError(blockedReason ?? 'Tests cannot be run in this browser.');
-          return;
+          return false;
         }
         execution = await executeTests();
         if (!execution && question.testCases.length > 0) {
           setSubmitError('The test run did not finish, so nothing was submitted.');
-          return;
+          return false;
         }
       }
 
@@ -381,7 +462,7 @@ export function Workspace({ data }: { data: WorkspaceData }) {
 
       if (!response.ok) {
         setSubmitError(response.error);
-        return;
+        return false;
       }
 
       setSubmitOpen(false);
@@ -393,6 +474,7 @@ export function Workspace({ data }: { data: WorkspaceData }) {
       toast.success(`Submitted — scored ${response.data.score}%`);
       // Pull the fresh submission counts into the rail and the home page.
       router.refresh();
+      return true;
     } catch (error) {
       // `createSubmissionAction` maps server-side failures to `{ok:false}`, but
       // the call itself can still reject on the transport — a dropped
@@ -400,6 +482,7 @@ export function Workspace({ data }: { data: WorkspaceData }) {
       // this catch the dialog would sit open with the spinner stopped and no
       // message, silently losing the most important action in the product.
       setSubmitError(messageOf(error));
+      return false;
     } finally {
       setSubmitting(false);
     }
@@ -413,8 +496,50 @@ export function Workspace({ data }: { data: WorkspaceData }) {
   const singleSubmissionUsed = !interview.allowMultipleSubmissions && data.submissions.length > 0;
   const submitDisabled = submitting || run.phase === 'running' || singleSubmissionUsed;
 
-  const saveLabel =
-    autosave.status === 'saving'
+  // Client-side auto-submit at the deadline. Best-effort by nature — it can
+  // only fire in an open tab with a live clock — so the server still accepts a
+  // late submission; this captures a snapshot at time-up for the common case.
+  const handleSubmitRef = React.useRef(handleSubmit);
+  React.useEffect(() => {
+    handleSubmitRef.current = handleSubmit;
+  });
+  const autoSubmittedRef = React.useRef(false);
+  const expiredAtLoadRef = React.useRef<boolean | null>(null);
+  React.useEffect(() => {
+    if (!countdown) return;
+    // Record whether the deadline had already passed on the first real reading,
+    // so a reload after time-up does not resubmit.
+    if (expiredAtLoadRef.current === null) expiredAtLoadRef.current = countdown.expired;
+
+    if (
+      shouldAutoSubmit({
+        isDesktop,
+        expired: countdown.expired,
+        expiredAtLoad: expiredAtLoadRef.current,
+        submitting,
+        runInFlight: run.phase === 'running',
+        singleSubmissionUsed,
+        alreadyRecorded: recorded !== null,
+        alreadyAutoSubmitted: autoSubmittedRef.current,
+      })
+    ) {
+      autoSubmittedRef.current = true;
+      toast('Time is up — submitting your current work.');
+      void handleSubmitRef.current().then((ok) => {
+        if (!ok) {
+          // The dialog is closed, so its inline error is invisible — tell the
+          // candidate here, and let them retry manually.
+          toast.error('Auto-submit did not go through. Please submit manually.');
+        }
+      });
+    }
+  }, [countdown, isDesktop, submitting, run.phase, singleSubmissionUsed, recorded]);
+
+  // Offline, "Not saved" is alarming and wrong — the local mirror has the code
+  // and the server copy syncs on reconnect — so reassure instead.
+  const saveLabel = !online
+    ? 'Saved on this device'
+    : autosave.status === 'saving'
       ? 'Saving…'
       : autosave.status === 'error'
         ? 'Not saved'
@@ -423,6 +548,7 @@ export function Workspace({ data }: { data: WorkspaceData }) {
           : autosave.status === 'saved'
             ? 'Saved'
             : 'Draft synced';
+  const saveLabelError = online && autosave.status === 'error';
 
   if (!isDesktop) {
     return (
@@ -430,7 +556,7 @@ export function Workspace({ data }: { data: WorkspaceData }) {
         data={data}
         countdown={countdown}
         recorded={recorded}
-        run={run}
+        run={displayRun}
         blockedReason={blockedReason}
       />
     );
@@ -456,10 +582,19 @@ export function Workspace({ data }: { data: WorkspaceData }) {
         </Badge>
 
         <div className="ml-auto flex items-center gap-3">
+          {!online ? (
+            <span
+              className="text-warning inline-flex items-center gap-1.5 text-[12px]"
+              title="You are offline. Your work is saved in this browser and will sync when the connection returns."
+            >
+              <WifiOff className="size-3.5" aria-hidden />
+              Offline
+            </span>
+          ) : null}
           <span
             className={cn(
               'text-[12px]',
-              autosave.status === 'error' ? 'text-destructive' : 'text-muted-foreground',
+              saveLabelError ? 'text-destructive' : 'text-muted-foreground',
             )}
             title="Your code is saved automatically, and mirrored in this browser."
           >
@@ -634,7 +769,11 @@ export function Workspace({ data }: { data: WorkspaceData }) {
                     />
                   }
                   second={
-                    <ResultsPanel state={run} onCancel={cancelRun} blockedReason={blockedReason} />
+                    <ResultsPanel
+                      state={displayRun}
+                      onCancel={cancelRun}
+                      blockedReason={blockedReason}
+                    />
                   }
                 />
               </div>

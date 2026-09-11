@@ -321,6 +321,61 @@ Output comparison normalises line endings and trailing whitespace, and falls
 back to numeric (epsilon) and structural-JSON comparison, so `[1, 2]` matches
 `[1,2]` and `3.0000000001` matches `3`. Exact string equality is tried first.
 
+### Importing a question set
+
+To add a whole set at once, use **Admin → Questions → Import** and paste (or
+upload) a JSON manifest. A manifest is either a bare array of questions or an
+object with a `questions` array:
+
+```json
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Echo",
+      "description": "Read a line from stdin and print it back.",
+      "difficulty": "EASY",
+      "supportedLanguages": ["JAVASCRIPT", "PYTHON"],
+      "starterCode": {
+        "javascript": "const line = readLine() ?? '';\nconsole.log(line);\n",
+        "python": "import sys\nprint(sys.stdin.readline().rstrip('\\n'))\n"
+      },
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "testCases": [
+        { "input": "hello", "expectedOutput": "hello", "weight": 1 },
+        { "input": "42", "expectedOutput": "42", "weight": 1 }
+      ]
+    }
+  ]
+}
+```
+
+Only `title` is required — every other field falls back to the same default the
+editor uses (`difficulty` `EASY`, both languages, `timeLimitMs` 5000,
+`memoryLimitMb` 128, an empty `testCases`). `starterCode` is keyed by lowercase
+runtime id (`javascript`, `python`); a key for an unsupported language is
+dropped, exactly as the editor does. Each entry is validated with the same
+schema and written through the same create path as a hand-entered question, so
+an imported question is indistinguishable from one typed in. Entries are
+**strict** — a misspelled field name (`timeLimtMs`, `dificulty`) is a hard
+error rather than being silently ignored and defaulted — while the envelope
+stays lenient, so an unknown top-level key and any `version` number are accepted
+(forward-compatibility).
+
+An entry whose `title` already exists in the bank is **skipped, never
+overwritten**, so re-running the same manifest imports only what is new instead
+of a pile of duplicates. This dedup is best-effort: `title` is not uniquely
+constrained in the database, so two imports of the same set running at the very
+same instant could each insert (the single-page importer already disables its
+button while a run is in flight, so a double-click cannot). The import reports
+how many it created and how many it skipped. The whole batch is one transaction
+— sized to allow a full manifest — so if any entry is invalid, or a write
+fails partway, the import writes nothing and names the offending entry (e.g.
+_Question 3 → Test 2 → weight_). A manifest may hold up to 200 questions; a
+title repeated within the manifest itself is rejected. Use the **Load sample**
+button on the import page for a ready-to-edit starting point.
+
 ---
 
 ## Architecture
@@ -452,11 +507,23 @@ this application never needs rich option rendering.
   (see [the limitation](#the-limitation--read-this-before-running-a-real-interview)).
 - There is no rate limiting on the login endpoint — put the app behind your
   existing reverse proxy or WAF if it is internet-facing.
-- **The interview duration is a countdown shown to the candidate, not a
-  server-enforced deadline.** A submission is not rejected for arriving after
-  the timer expires; the timer is guidance, and a reviewer judges lateness. If
-  you need a hard cut-off, enforce it in `createSubmissionAction` against the
-  assignment's `startedAt`.
+- **The interview duration is a countdown, enforced only best-effort on the
+  client.** The clock is anchored to the server-stamped `startedAt`, so it
+  survives a refresh. When it crosses zero in an open desktop tab the workspace
+  **auto-submits the current question once** (a snapshot of the current work),
+  which is a convenience, not a guarantee: a closed tab, a dead connection, or
+  a candidate who sets their clock back all skip it. The server therefore still
+  **accepts a late submission** and never rejects one for arriving after the
+  timer — a reviewer judges lateness from `submittedAt`. If you need a hard
+  cut-off, enforce it in `createSubmissionAction` against `startedAt`.
+- **A session is resilient to a lost connection and to a refresh, on the client
+  side.** Every keystroke is mirrored to `localStorage` synchronously, so a
+  dropped connection never loses work; a failed cloud save is re-queued and
+  retried on the next change and the moment the browser comes back online (a
+  header shows _Offline_ / _Saved on this device_ meanwhile). A refresh restores
+  the editor buffer **and** the last test-run results panel from `localStorage`.
+  What is inherently server-side — a durable activity/audit log of every run,
+  keystroke or focus event — is out of scope for the browser and not recorded.
 - **Candidates and interviews are deactivated / archived, never hard-deleted.**
   Deactivating a candidate revokes their sessions and blocks sign-in;
   archiving an interview stops it accepting answers. Both preserve the
