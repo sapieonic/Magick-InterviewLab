@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Longest Common Subsequence String",
+      "difficulty": "HARD",
+      "supportedLanguages": ["PYTHON"],
+      "description": "You are given two lowercase strings, one per line. Print the **longest common subsequence** of the two strings — that is, the longest string that can be obtained from *both* input strings by deleting zero or more characters without reordering the ones that remain. The characters of a subsequence do **not** need to be contiguous in the original string.\n\nIf several common subsequences share the maximum length, print the **lexicographically smallest** one among them. If the only common subsequence of the two strings is the empty string, print `EMPTY`.\n\n### Input\n\n```\n<string 1>\n<string 2>\n```\n\nBoth lines are non-empty strings of lowercase English letters, each of length at most 18.\n\n### Output\n\nA single line: the longest common subsequence (lexicographically smallest if there's a tie), or `EMPTY`.\n\n### Worked example — subsequence vs. substring\n\n```\naggtab\ngxtxayb\n```\n\nThe correct answer is `gtab`, length 4: take `g` (index 0 of the first string), `t` (index 3), `a` (index 4), `b` (index 5) — those four characters appear in that same relative order in the second string too (`g` at index 0, `t` at index 2, `a` at index 5, `b` at index 6), even though they are **not contiguous** in either string. A solution that only looks for the longest *common substring* (a contiguous run) would find just `a` (length 1) here and be wrong — the two strings share no contiguous run of length greater than 1, yet they share a common subsequence of length 4. Subsequence, not substring.\n\n### Worked example — the tie-break\n\n```\nba\nab\n```\n\nBoth `a` and `b` are common subsequences of length 1 (the maximum possible here), so there's a tie. Print the lexicographically smaller of the two: `a`.\n\n### Worked example — EMPTY\n\n```\nabc\nxyz\n```\n\nThe two strings share no character at all, so the only common subsequence is the empty string. Print `EMPTY` (not an empty line).",
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "starterCode": {
+        "python": "import sys\n\ndef solve():\n    lines = sys.stdin.read().split('\\n')\n    a = lines[0].strip()\n    b = lines[1].strip()\n\n    # TODO: find the longest string that is a subsequence of BOTH a and b\n    # (characters in order, not necessarily contiguous). If several longest\n    # common subsequences exist, print the lexicographically smallest one.\n    # If the only common subsequence is the empty string, print EMPTY.\n\nsolve()\n"
+      },
+      "testCases": [
+        {
+          "description": "LCS is non-contiguous in both strings; longest-common-substring would wrongly return a length-1 answer",
+          "input": "aggtab\ngxtxayb",
+          "expectedOutput": "gtab",
+          "weight": 5
+        },
+        {
+          "description": "several distinct length-3 common subsequences exist (abc, bbc, cbc); must pick the lexicographically smallest",
+          "input": "cabbc\nbacbc",
+          "expectedOutput": "abc",
+          "weight": 5
+        },
+        {
+          "description": "identical strings: the LCS is the whole string",
+          "input": "algorithm\nalgorithm",
+          "expectedOutput": "algorithm",
+          "weight": 2
+        },
+        {
+          "description": "completely disjoint alphabets: no common subsequence at all",
+          "input": "abcdef\nghijkl",
+          "expectedOutput": "EMPTY",
+          "weight": 3
+        },
+        {
+          "description": "one string is entirely a subsequence of the other",
+          "input": "abcde\nace",
+          "expectedOutput": "ace",
+          "weight": 2
+        },
+        {
+          "description": "only a single character in common",
+          "input": "xyz\nzab",
+          "expectedOutput": "z",
+          "weight": 2
+        },
+        {
+          "description": "strings of very different lengths",
+          "input": "cat\nconcatenate",
+          "expectedOutput": "cat",
+          "weight": 2
+        },
+        {
+          "description": "longer pair (14 and 18 chars) with a substantial non-contiguous LCS",
+          "input": "cbdaaacabaadda\nbadaabadababcdbacb",
+          "expectedOutput": "bdaaaabada",
+          "weight": 3
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Smallest Topological Order",
+      "difficulty": "HARD",
+      "supportedLanguages": ["JAVASCRIPT"],
+      "description": "You are given `n` tasks, labelled `0` to `n-1`, and `m` dependency constraints. Each constraint says one task must be completed **before** another. Find a valid ordering of **all** `n` tasks that respects every constraint — and among all such valid orderings, print the **lexicographically smallest** one.\n\n### Input\n\n- Line 1: two space-separated integers `n` and `m`.\n- Each of the next `m` lines contains two space-separated integers `a b`, meaning task `a` must come before task `b`.\n\n### Output\n\nIf at least one valid ordering exists, print all `n` task labels **exactly once each**, space-separated on a single line, choosing the lexicographically smallest valid ordering (compare the sequences element by element — the ordering with the smaller label at the first position where they differ wins; e.g. `[1, 0, 2]` is smaller than `[1, 2, 0]`).\n\nIf the constraints are contradictory (there is a cycle, so no valid ordering exists), print exactly:\n\n```\nCYCLE\n```\n\n### Why \"smallest\" is not the same as \"any valid order\"\n\nA valid ordering only requires respecting every `a b` constraint — many orderings can satisfy that. The task is to find the specific one that is smallest when compared as a sequence of labels, which means: at every step, among the tasks that currently have no unfinished prerequisite, always schedule the **smallest-labelled** one next — not simply the first one that became available.\n\n### Worked example\n\n```\n3 1\n1 0\n```\n\nTask `1` must come before task `0`. Task `2` has no constraints at all.\n\nAt the start, tasks `1` and `2` have no unfinished prerequisites (task `0` is waiting on `1`). Among `{1, 2}` the smallest is `1`, so schedule `1` first. That frees up task `0`, so now `{0, 2}` are available — the smallest is `0`, so schedule `0` next. Only `2` is left.\n\n```\n1 0 2\n```\n\nNote that simply processing tasks in the order they *first become available* (task `1`, then task `2` alongside it, then task `0` once it's freed) would produce `1 2 0` instead — a valid ordering, but not the lexicographically smallest one, since `1 0 2` is smaller at the second position.\n\n### Constraints\n\n- `1 <= n <= 12`\n- `0 <= m <= 30`\n- `0 <= a, b < n`, `a != b`",
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "starterCode": {
+        "javascript": "const first = (readLine() ?? '').trim().split(/\\s+/).map(Number);\nconst n = first[0];\nconst m = first[1];\nconst adj = Array.from({ length: n }, () => []);\nfor (let i = 0; i < m; i++) {\n  const [a, b] = (readLine() ?? '').trim().split(/\\s+/).map(Number);\n  adj[a].push(b);\n}\n\n// TODO: print the lexicographically smallest valid ordering of all n tasks\n// (space-separated on one line), respecting every \"a before b\" edge recorded\n// in adj. Every task 0..n-1 must appear exactly once. If no valid ordering\n// exists (the dependencies contain a cycle), print CYCLE instead.\nconsole.log('');\n"
+      },
+      "testCases": [
+        {
+          "description": "simple chain: 0 before 1 before 2 before 3",
+          "input": "4 3\n0 1\n1 2\n2 3",
+          "expectedOutput": "0 1 2 3",
+          "weight": 1
+        },
+        {
+          "description": "a FIFO-queue Kahn's algorithm produces a valid but NOT lexicographically smallest order here; only always-scheduling-the-smallest-available task is correct",
+          "input": "6 3\n1 0\n3 2\n5 4",
+          "expectedOutput": "1 0 3 2 5 4",
+          "weight": 10
+        },
+        {
+          "description": "no edges at all: any permutation is valid, so the smallest is just 0..n-1",
+          "input": "5 0",
+          "expectedOutput": "0 1 2 3 4",
+          "weight": 1
+        },
+        {
+          "description": "direct 2-cycle between tasks 0 and 1, with an unrelated free task 2",
+          "input": "3 2\n0 1\n1 0",
+          "expectedOutput": "CYCLE",
+          "weight": 8
+        },
+        {
+          "description": "a 3-task cycle among 2, 3 and 4 only becomes visible after tasks 0, 1 and 5 are validly scheduled first",
+          "input": "6 4\n0 1\n2 3\n3 4\n4 2",
+          "expectedOutput": "CYCLE",
+          "weight": 8
+        },
+        {
+          "description": "four independent components (free tasks 2 and 3, plus reversed-label pairs 4-before-0 and 5-before-1) interleaved by the smallest-available rule",
+          "input": "6 2\n4 0\n5 1",
+          "expectedOutput": "2 3 4 0 5 1",
+          "weight": 5
+        },
+        {
+          "description": "single task, no edges",
+          "input": "1 0",
+          "expectedOutput": "0",
+          "weight": 1
+        },
+        {
+          "description": "larger 9-task DAG with several reversed-label dependencies, so the answer is far from 0..n-1 in order but still runs instantly",
+          "input": "9 8\n8 0\n1 3\n2 3\n3 5\n4 5\n4 7\n0 6\n1 2",
+          "expectedOutput": "1 2 3 4 5 7 8 0 6",
+          "weight": 4
+        }
+      ]
+    }
+  ]
+}
