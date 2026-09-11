@@ -186,11 +186,7 @@ export function ApplicationDetailsForm({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Field id="detail-jobRoleId" label="Job role" errors={fieldErrors?.jobRoleId}>
-          <Select
-            id="detail-jobRoleId"
-            name="jobRoleId"
-            defaultValue={application.jobRoleId ?? ''}
-          >
+          <Select id="detail-jobRoleId" name="jobRoleId" defaultValue={application.jobRoleId ?? ''}>
             <option value="">No role</option>
             {jobRoles.map((role) => (
               <option key={role.id} value={role.id}>

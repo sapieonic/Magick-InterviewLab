@@ -120,9 +120,7 @@ export default async function ApplicationDetailPage({ params }: PageProps) {
             <span>{application.candidate.email}</span>
             <span>{roleLine}</span>
             <ApplicationStatusBadge status={application.status} />
-            {application.decision ? (
-              <DecisionBadge outcome={application.decision.outcome} />
-            ) : null}
+            {application.decision ? <DecisionBadge outcome={application.decision.outcome} /> : null}
             <span>
               {application.owner ? `Owned by ${application.owner.name}` : 'No owner assigned'}
             </span>
@@ -208,7 +206,11 @@ export default async function ApplicationDetailPage({ params }: PageProps) {
             description="Everything that moved this application, newest first."
           >
             {timeline.length === 0 ? (
-              <EmptyState icon={ClipboardList} title="Nothing recorded yet" className="border-none py-6" />
+              <EmptyState
+                icon={ClipboardList}
+                title="Nothing recorded yet"
+                className="border-none py-6"
+              />
             ) : (
               <ul className="space-y-2">
                 {timeline.map((event) => {
@@ -220,9 +222,7 @@ export default async function ApplicationDetailPage({ params }: PageProps) {
                     >
                       <span className="min-w-0 text-[13px]">
                         {EVENT_LABELS[event.action] ?? event.action}
-                        {detail ? (
-                          <span className="text-muted-foreground"> — {detail}</span>
-                        ) : null}
+                        {detail ? <span className="text-muted-foreground"> — {detail}</span> : null}
                       </span>
                       <span className="text-muted-foreground text-[12px] whitespace-nowrap">
                         {event.actor ? event.actor.name : 'System'} · {formatDate(event.createdAt)}
@@ -274,10 +274,7 @@ export default async function ApplicationDetailPage({ params }: PageProps) {
             </dl>
 
             {editable ? (
-              <ApplicationStatusForm
-                applicationId={application.id}
-                status={application.status}
-              />
+              <ApplicationStatusForm applicationId={application.id} status={application.status} />
             ) : null}
           </Section>
 
@@ -309,9 +306,7 @@ export default async function ApplicationDetailPage({ params }: PageProps) {
                     {formatDate(application.decision.decidedAt)}
                   </span>
                 </div>
-                <p className="text-[13px] whitespace-pre-wrap">
-                  {application.decision.rationale}
-                </p>
+                <p className="text-[13px] whitespace-pre-wrap">{application.decision.rationale}</p>
               </div>
             ) : (
               <p className="text-muted-foreground mb-3 text-[13px]">
@@ -320,9 +315,7 @@ export default async function ApplicationDetailPage({ params }: PageProps) {
               </p>
             )}
             <Button asChild size="sm" variant="outline" className="mt-3 w-full">
-              <Link href={`/admin/applications/${application.id}/scorecard`}>
-                Open scorecard
-              </Link>
+              <Link href={`/admin/applications/${application.id}/scorecard`}>Open scorecard</Link>
             </Button>
           </Section>
 

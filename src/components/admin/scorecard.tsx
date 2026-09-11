@@ -15,6 +15,7 @@ import type { CriterionView, FeedbackView } from '@/features/feedback/queries';
 import type { ScorecardAutomatedRun } from '@/features/scorecard/queries';
 import {
   normaliseScore,
+  scorecardOverall,
   toPercent,
   type ApplicationSignal,
   type StageSignal,
@@ -246,6 +247,9 @@ export function ScorecardCard({
   criteria: readonly CriterionView[];
 }) {
   const byCriterion = new Map(feedback.scores.map((score) => [score.criterionId, score]));
+  // This author's own weighted average, on the same normalised basis as the
+  // panel's, so the two can be read against each other without arithmetic.
+  const overall = scorecardOverall(criteria, feedback.scores);
 
   return (
     <article className="space-y-3 rounded-lg border px-4 py-3.5">
@@ -256,6 +260,11 @@ export function ScorecardCard({
         ) : null}
         {feedback.confidence ? <ConfidenceBadge confidence={feedback.confidence} /> : null}
         <FeedbackStatusBadge status={feedback.status} />
+        {overall === null ? null : (
+          <Badge variant="outline" className="tabular-nums">
+            {toPercent(overall)}% rubric
+          </Badge>
+        )}
         <span className="text-muted-foreground ml-auto text-[12px]">
           {formatDate(feedback.submittedAt ?? feedback.updatedAt)}
         </span>

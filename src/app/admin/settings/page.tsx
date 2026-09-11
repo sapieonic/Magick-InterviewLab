@@ -17,7 +17,12 @@ import { listPublishedRubrics } from '@/features/rubrics/queries';
 import { listStaff } from '@/features/staff/queries';
 import { createStaffAction, setUserRoleAction } from '@/features/staff/actions';
 import { PageHeader, Section } from '@/components/admin/page-header';
-import { ActiveBadge, RoleBadge, StageTypeBadge, STAGE_TYPE_LABELS } from '@/components/admin/badges';
+import {
+  ActiveBadge,
+  RoleBadge,
+  StageTypeBadge,
+  STAGE_TYPE_LABELS,
+} from '@/components/admin/badges';
 import { ActionForm, HiddenFields } from '@/components/admin/action-form';
 import { SubmitButton } from '@/components/admin/form';
 import { Input } from '@/components/ui/input';
@@ -124,12 +129,7 @@ export default async function SettingsPage() {
                             ))}
                           </Select>
                         </div>
-                        <input
-                          type="hidden"
-                          name="description"
-                          value={role.description}
-                          readOnly
-                        />
+                        <input type="hidden" name="description" value={role.description} readOnly />
                         <div className="flex flex-wrap items-center gap-3">
                           <span className="flex items-center gap-2">
                             <Checkbox
@@ -167,12 +167,7 @@ export default async function SettingsPage() {
               >
                 <div className="min-w-40 flex-1 space-y-1.5">
                   <Label htmlFor="new-role-title">New job role</Label>
-                  <Input
-                    id="new-role-title"
-                    name="title"
-                    placeholder="Backend Engineer"
-                    required
-                  />
+                  <Input id="new-role-title" name="title" placeholder="Backend Engineer" required />
                 </div>
                 <div className="w-28 space-y-1.5">
                   <Label htmlFor="new-role-level">Level</Label>
@@ -390,8 +385,8 @@ export default async function SettingsPage() {
                       </td>
                       <td className="text-muted-foreground py-2 pr-3 tabular-nums">
                         {person.ownedApplicationCount} app
-                        {person.ownedApplicationCount === 1 ? '' : 's'} ·{' '}
-                        {person.panelSeatCount} panel
+                        {person.ownedApplicationCount === 1 ? '' : 's'} · {person.panelSeatCount}{' '}
+                        panel
                       </td>
                       <td className="text-muted-foreground py-2 pr-3 whitespace-nowrap">
                         {formatDate(person.lastLoginAt)}
@@ -447,13 +442,7 @@ export default async function SettingsPage() {
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="staff-email">Email</Label>
-                  <Input
-                    id="staff-email"
-                    name="email"
-                    type="email"
-                    autoComplete="off"
-                    required
-                  />
+                  <Input id="staff-email" name="email" type="email" autoComplete="off" required />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="staff-role">Role</Label>
@@ -478,8 +467,8 @@ export default async function SettingsPage() {
                   />
                   <p className="text-muted-foreground text-[12px]">
                     At least {MIN_PASSWORD_LENGTH} characters with a letter and a digit. Hand it
-                    over yourself — it is never emailed and never shown again, and they must
-                    replace it at first sign-in.
+                    over yourself — it is never emailed and never shown again, and they must replace
+                    it at first sign-in.
                   </p>
                 </div>
               </div>

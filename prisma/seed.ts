@@ -15,7 +15,16 @@ import { randomBytes } from 'node:crypto';
 import { hash } from '@node-rs/argon2';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client.js';
-import { SAMPLE_QUESTIONS, SAMPLE_INTERVIEW } from './seed-data.js';
+import {
+  SAMPLE_APPLICATION_PROGRESS,
+  SAMPLE_INTERVIEW,
+  SAMPLE_JOB_ROLE,
+  SAMPLE_PIPELINE_STAGES,
+  SAMPLE_PIPELINE_TEMPLATE,
+  SAMPLE_QUESTIONS,
+  SAMPLE_STAFF,
+} from './seed-data.js';
+import type { Role } from '../src/generated/prisma/enums.js';
 
 const ARGON = { memoryCost: 19456, timeCost: 2, parallelism: 1 } as const;
 
@@ -143,12 +152,217 @@ async function seedDemo(): Promise<void> {
     console.info(`· Candidate ${candidateEmail} already exists.`);
   }
 
-  await prisma.interviewAssignment.upsert({
+  const assignment = await prisma.interviewAssignment.upsert({
     where: { interviewId_candidateId: { interviewId: interview.id, candidateId: candidate.id } },
     create: { interviewId: interview.id, candidateId: candidate.id },
     update: {},
   });
   console.info('✓ Interview assigned to candidate');
+
+  await seedPipeline({ candidateId: candidate.id, assignmentId: assignment.id });
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * A staff account, created once.
+ *
+ * Same contract as the candidate above: the password comes from
+ * SEED_STAFF_PASSWORD or is generated and printed exactly once, and it is
+ * always temporary — whoever runs the seed knows it, so the colleague must
+ * replace it at first sign-in.
+ */
+async function ensureStaff(person: { email: string; name: string; role: Role }): Promise<{
+  id: string;
+  name: string;
+}> {
+  const email = person.email.trim().toLowerCase();
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) {
+    console.info(`· Staff ${email} already exists.`);
+    return { id: existing.id, name: existing.name };
+  }
+
+  const plaintext = process.env.SEED_STAFF_PASSWORD?.trim() || generatePassword();
+  const created = await prisma.user.create({
+    data: {
+      email,
+      name: person.name,
+      passwordHash: await hash(plaintext, ARGON),
+      role: person.role,
+      mustChangePassword: true,
+    },
+  });
+  console.info(`✓ Staff created: ${email} (${person.role})`);
+  console.info(`  Temporary password (shown once): ${plaintext}`);
+  return { id: created.id, name: created.name };
+}
+
+/**
+ * A walkable hiring process: three colleagues, a requisition, the loop it
+ * defaults to, and one candidate part-way through it.
+ *
+ * Idempotent like everything else here. The template's rounds are rewritten on
+ * every run (they are content), but the *application* is created once and then
+ * left alone — re-running the seed must not resurrect a round somebody skipped
+ * or overwrite a status somebody set while walking the demo.
+ */
+async function seedPipeline(ctx: { candidateId: string; assignmentId: string }): Promise<void> {
+  const recruiter = await ensureStaff(SAMPLE_STAFF.recruiter);
+  const hiringManager = await ensureStaff(SAMPLE_STAFF.hiringManager);
+  const interviewer = await ensureStaff(SAMPLE_STAFF.interviewer);
+
+  // Whatever rubric authoring has already seeded, if anything. A stage
+  // template names a rubric and an instance freezes a version, so both halves
+  // are looked up here and both are optional: the demo is still walkable with
+  // no rubric at all, it just has nothing to score against.
+  const rubric = await prisma.rubric.findFirst({
+    where: { isActive: true, versions: { some: { isPublished: true } } },
+    orderBy: { createdAt: 'asc' },
+    select: {
+      id: true,
+      versions: {
+        where: { isPublished: true },
+        orderBy: { version: 'desc' },
+        take: 1,
+        select: { id: true },
+      },
+    },
+  });
+  const rubricId = rubric?.id ?? null;
+  const rubricVersionId = rubric?.versions[0]?.id ?? null;
+
+  const existingTemplate = await prisma.pipelineTemplate.findFirst({
+    where: { name: SAMPLE_PIPELINE_TEMPLATE.name },
+  });
+  const template = existingTemplate
+    ? await prisma.pipelineTemplate.update({
+        where: { id: existingTemplate.id },
+        data: SAMPLE_PIPELINE_TEMPLATE,
+      })
+    : await prisma.pipelineTemplate.create({ data: SAMPLE_PIPELINE_TEMPLATE });
+
+  await prisma.pipelineStageTemplate.deleteMany({ where: { templateId: template.id } });
+  await prisma.pipelineStageTemplate.createMany({
+    data: SAMPLE_PIPELINE_STAGES.map((stage, position) => ({
+      templateId: template.id,
+      name: stage.name,
+      type: stage.type,
+      position,
+      isRequired: stage.isRequired,
+      // The coding round is machine-graded; a human rubric on it would invite
+      // scoring the same thing twice with two different instruments.
+      rubricId: stage.type === 'CODING_ASSESSMENT' ? null : rubricId,
+    })),
+  });
+  console.info(`✓ Pipeline template "${template.name}" (${SAMPLE_PIPELINE_STAGES.length} rounds)`);
+
+  const existingRole = await prisma.jobRole.findFirst({
+    where: { title: SAMPLE_JOB_ROLE.title, level: SAMPLE_JOB_ROLE.level },
+  });
+  const jobRole = existingRole
+    ? await prisma.jobRole.update({
+        where: { id: existingRole.id },
+        data: { ...SAMPLE_JOB_ROLE, pipelineTemplateId: template.id },
+      })
+    : await prisma.jobRole.create({
+        data: { ...SAMPLE_JOB_ROLE, pipelineTemplateId: template.id },
+      });
+  console.info(`✓ Job role "${jobRole.title} ${jobRole.level}"`);
+
+  const existingApplication = await prisma.application.findFirst({
+    where: { candidateId: ctx.candidateId, jobRoleId: jobRole.id },
+  });
+  if (existingApplication) {
+    console.info('· Demo application already exists.');
+    return;
+  }
+
+  const application = await prisma.application.create({
+    data: {
+      candidateId: ctx.candidateId,
+      jobRoleId: jobRole.id,
+      pipelineTemplateId: template.id,
+      ownerId: recruiter.id,
+      source: 'Referral',
+      status: 'ACTIVE',
+    },
+  });
+
+  const now = Date.now();
+  // Who sits on which round. The assessment has no panel — nobody scores a
+  // machine-graded round — and the two rounds nobody has reached yet still get
+  // their panel, because scheduling is the thing that stalls a pipeline.
+  const panels: Record<string, Array<{ userId: string; role: 'LEAD' | 'PANELIST' | 'SHADOW' }>> = {
+    'Technical screen': [
+      { userId: interviewer.id, role: 'LEAD' },
+      { userId: hiringManager.id, role: 'PANELIST' },
+    ],
+    'System design': [{ userId: interviewer.id, role: 'PANELIST' }],
+    'Hiring manager': [{ userId: hiringManager.id, role: 'LEAD' }],
+  };
+
+  for (const [position, stage] of SAMPLE_PIPELINE_STAGES.entries()) {
+    const progress = SAMPLE_APPLICATION_PROGRESS[position];
+    if (!progress) continue;
+
+    const scheduledAt =
+      progress.scheduledDaysAgo === null
+        ? null
+        : new Date(now - progress.scheduledDaysAgo * DAY_MS);
+
+    const created = await prisma.stage.create({
+      data: {
+        applicationId: application.id,
+        name: stage.name,
+        type: stage.type,
+        position,
+        status: progress.status,
+        outcome: progress.outcome,
+        scheduledAt,
+        completedAt: progress.status === 'COMPLETE' ? scheduledAt : null,
+        blindFeedback: true,
+        rubricVersionId: stage.type === 'CODING_ASSESSMENT' ? null : rubricVersionId,
+        // The candidate's existing assignment backs the coding round rather
+        // than a second one being invented for it.
+        assignmentId: stage.type === 'CODING_ASSESSMENT' ? ctx.assignmentId : null,
+      },
+    });
+
+    const panel = panels[stage.name] ?? [];
+    for (const seat of panel) {
+      await prisma.stageInterviewer.create({
+        data: { stageId: created.id, userId: seat.userId, role: seat.role },
+      });
+    }
+  }
+
+  // Two events so the activity panel has something true to show rather than
+  // starting empty on a pipeline that is visibly mid-flight.
+  await prisma.auditEvent.createMany({
+    data: [
+      {
+        actorId: recruiter.id,
+        action: 'application.created',
+        entityType: 'Application',
+        entityId: application.id,
+        applicationId: application.id,
+        metadata: { jobRoleId: jobRole.id, source: 'Referral' },
+        createdAt: new Date(now - 14 * DAY_MS),
+      },
+      {
+        actorId: recruiter.id,
+        action: 'stage.outcome_recorded',
+        entityType: 'Application',
+        entityId: application.id,
+        applicationId: application.id,
+        metadata: { outcome: 'ADVANCE', stageName: SAMPLE_PIPELINE_STAGES[0]?.name ?? '' },
+        createdAt: new Date(now - 11 * DAY_MS),
+      },
+    ],
+  });
+
+  console.info('✓ Demo application mid-flight, panel assigned');
 }
 
 async function main(): Promise<void> {

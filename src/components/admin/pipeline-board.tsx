@@ -2,7 +2,11 @@ import Link from 'next/link';
 import { AlarmClock, ClipboardCheck, UserRound } from 'lucide-react';
 import type { ApplicationStatus } from '@/generated/prisma/enums';
 import type { ApplicationListRow } from '@/features/pipeline/queries';
-import { ApplicationStatusBadge, StageStatusBadge, StageTypeBadge } from '@/components/admin/badges';
+import {
+  ApplicationStatusBadge,
+  StageStatusBadge,
+  StageTypeBadge,
+} from '@/components/admin/badges';
 import { cn } from '@/lib/utils';
 
 /**
@@ -83,7 +87,8 @@ export function PipelineBoard({ applications }: { applications: readonly Applica
 }
 
 function ApplicationCard({ row }: { row: ApplicationListRow }) {
-  const stalled = row.status === 'ACTIVE' && row.daysInStage !== null && row.daysInStage >= STALL_DAYS;
+  const stalled =
+    row.status === 'ACTIVE' && row.daysInStage !== null && row.daysInStage >= STALL_DAYS;
   const waiting = row.outstandingScorecards > 0;
 
   return (
@@ -105,7 +110,9 @@ function ApplicationCard({ row }: { row: ApplicationListRow }) {
       </div>
 
       <p className="text-muted-foreground mt-0.5 truncate text-[12px]">
-        {row.jobRole ? `${row.jobRole.title}${row.jobRole.level ? ` · ${row.jobRole.level}` : ''}` : 'No job role'}
+        {row.jobRole
+          ? `${row.jobRole.title}${row.jobRole.level ? ` · ${row.jobRole.level}` : ''}`
+          : 'No job role'}
       </p>
 
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -140,7 +147,10 @@ function ApplicationCard({ row }: { row: ApplicationListRow }) {
 
         {row.daysInStage !== null ? (
           <span
-            className={cn('inline-flex items-center gap-1', stalled && 'text-destructive font-medium')}
+            className={cn(
+              'inline-flex items-center gap-1',
+              stalled && 'text-destructive font-medium',
+            )}
           >
             <AlarmClock className="size-3" aria-hidden />
             <span className="tabular-nums">

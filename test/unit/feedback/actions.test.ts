@@ -99,8 +99,7 @@ function mockExisting(options: ExistingOptions | null) {
           summary: 'the original summary',
           strengths: 'original strengths',
           concerns: 'original concerns',
-          rubricVersionId:
-            options.rubricVersionId === undefined ? 'rv1' : options.rubricVersionId,
+          rubricVersionId: options.rubricVersionId === undefined ? 'rv1' : options.rubricVersionId,
           submittedAt:
             options.submittedAt === undefined
               ? new Date('2026-01-02T00:00:00Z')
@@ -132,16 +131,14 @@ function completeSubmission(extra: Record<string, string> = {}): FormData {
 
 function createdFeedbackData(): Record<string, unknown> {
   const call = h.db.feedback.create.mock.calls[0]?.[0] as
-    | { data: Record<string, unknown> }
-    | undefined;
+    { data: Record<string, unknown> } | undefined;
   if (!call) throw new Error('expected prisma.feedback.create to have been called');
   return call.data;
 }
 
 function updatedFeedbackData(): Record<string, unknown> {
   const call = h.db.feedback.update.mock.calls[0]?.[0] as
-    | { data: Record<string, unknown> }
-    | undefined;
+    { data: Record<string, unknown> } | undefined;
   if (!call) throw new Error('expected prisma.feedback.update to have been called');
   return call.data;
 }
@@ -305,7 +302,12 @@ describe('a submitted scorecard is append-only', () => {
 
     expect(result.ok).toBe(true);
     const call = h.db.feedbackRevision.create.mock.calls[0]?.[0] as {
-      data: { feedbackId: string; editedById: string; reason: string; snapshot: Record<string, unknown> };
+      data: {
+        feedbackId: string;
+        editedById: string;
+        reason: string;
+        snapshot: Record<string, unknown>;
+      };
     };
     expect(call.data.feedbackId).toBe('fb1');
     expect(call.data.editedById).toBe('viewer');

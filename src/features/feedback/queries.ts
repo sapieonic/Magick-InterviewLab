@@ -285,8 +285,11 @@ export async function getStageForFeedback(
     viewerHasSubmitted: ownRow?.status === 'SUBMITTED',
   };
 
-  // The single gate. Everything downstream reads `readable`, never
-  // `stage.feedback`, so there is exactly one place to get this wrong.
+  // The single gate. Everything about *other people's* scorecards is read off
+  // `readable` rather than `stage.feedback`, so there is exactly one place to
+  // get this wrong. The two things taken from the unfiltered rows are the
+  // viewer's own row — which the rule always permits its author — and counts
+  // of who has submitted, which is status rather than content.
   const readable = visibleFeedback(stage.feedback, context);
   const readableIds = new Set(readable.map((row) => row.id));
   const withheld = stage.feedback.filter((row) => !readableIds.has(row.id));

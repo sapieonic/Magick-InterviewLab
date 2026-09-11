@@ -127,7 +127,10 @@ export interface PipelineProgress {
  * fed from rows the caller has already loaded, so a second round trip can
  * never make the two views disagree.
  */
-export function summariseStages(raw: readonly RawStage[], now: Date = new Date()): PipelineProgress {
+export function summariseStages(
+  raw: readonly RawStage[],
+  now: Date = new Date(),
+): PipelineProgress {
   const stages = [...raw].sort((a, b) => a.position - b.position).map(summariseStage);
   const currentIndex = stages.findIndex((s) => !isStageResolved(s.status));
   const currentStage = currentIndex === -1 ? null : (stages[currentIndex] ?? null);

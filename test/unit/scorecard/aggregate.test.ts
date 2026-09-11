@@ -235,14 +235,16 @@ describe('weightedOverall', () => {
 
   it('is scale-independent: the same relative performance scores the same', () => {
     const fourPoint = weightedOverall(
-      summariseCriteria([criterion({ id: 'a', maxScore: 4 })], [
-        card('HIRE', [{ criterionId: 'a', score: 4 }]),
-      ]),
+      summariseCriteria(
+        [criterion({ id: 'a', maxScore: 4 })],
+        [card('HIRE', [{ criterionId: 'a', score: 4 }])],
+      ),
     );
     const tenPoint = weightedOverall(
-      summariseCriteria([criterion({ id: 'a', maxScore: 10 })], [
-        card('HIRE', [{ criterionId: 'a', score: 10 }]),
-      ]),
+      summariseCriteria(
+        [criterion({ id: 'a', maxScore: 10 })],
+        [card('HIRE', [{ criterionId: 'a', score: 10 }])],
+      ),
     );
     expect(fourPoint).toBe(tenPoint);
   });
