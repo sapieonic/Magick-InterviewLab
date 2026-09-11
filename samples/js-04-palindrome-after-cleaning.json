@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Palindrome After Cleaning",
+      "difficulty": "MEDIUM",
+      "supportedLanguages": ["JAVASCRIPT"],
+      "description": "Read a single line of text — it may contain spaces, punctuation and digits — and decide whether it is a **palindrome once you ignore everything except letters and digits**.\n\n### Cleaning rules\n\n1. Remove every character that is **not** a letter (`a`-`z`, `A`-`Z`) or a digit (`0`-`9`) — this drops spaces, commas, periods, colons, apostrophes, question marks, etc.\n2. Lower-case whatever letters remain.\n\nThen check whether the cleaned string reads the same forwards and backwards.\n\nIf the line has **no** letters or digits at all (for example it is empty, all spaces, or only punctuation), the cleaned string is the empty string — and the empty string counts as a palindrome, so the answer is `YES`.\n\n### Input\n\nA single line (it may be empty).\n\n### Output\n\nPrint exactly `YES` if the cleaned string is a palindrome, otherwise print exactly `NO`.\n\n### Example\n\nInput:\n```\nA man, a plan, a canal: Panama\n```\n\nCleaning keeps only letters/digits and lower-cases them: `amanaplanacanalpanama`, which reads the same backwards. Output:\n```\nYES\n```",
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "starterCode": {
+        "javascript": "// Read a single line of input. It may contain spaces and punctuation,\n// and it may even be empty.\nconst line = readLine() ?? '';\n\n// TODO:\n// 1. Build a \"cleaned\" version of `line` that keeps only letters (a-z, A-Z)\n//    and digits (0-9), dropping everything else (spaces, punctuation, ...).\n// 2. Lower-case the cleaned string.\n// 3. Check whether the cleaned string reads the same forwards and backwards.\n//    (An empty cleaned string counts as a palindrome.)\n// 4. Print \"YES\" if it is a palindrome, otherwise print \"NO\".\n"
+      },
+      "testCases": [
+        { "description": "classic sentence palindrome with punctuation and spaces", "input": "A man, a plan, a canal: Panama", "expectedOutput": "YES", "weight": 3 },
+        { "description": "clear non-palindrome sentence", "input": "Hello, World!", "expectedOutput": "NO", "weight": 1 },
+        { "description": "mixed-case single-word palindrome", "input": "RaceCar", "expectedOutput": "YES", "weight": 2 },
+        { "description": "numeric palindrome", "input": "12321", "expectedOutput": "YES", "weight": 2 },
+        { "description": "single character is trivially a palindrome", "input": "x", "expectedOutput": "YES", "weight": 1 },
+        { "description": "only punctuation and spaces -> empty after cleaning -> YES", "input": "!!! ,,, ???", "expectedOutput": "YES", "weight": 3 },
+        { "description": "another clear non-palindrome", "input": "This is not a palindrome", "expectedOutput": "NO", "weight": 1 }
+      ]
+    }
+  ]
+}

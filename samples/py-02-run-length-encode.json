@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Run-Length Encode a String",
+      "difficulty": "MEDIUM",
+      "supportedLanguages": ["PYTHON"],
+      "description": "Read a single line containing only lowercase letters and print its **run-length encoding**.\n\n### Input\nOne line: a string of lowercase letters (`a`-`z`).\n```\naaabbc\n```\n\n### Output\nOne line, with no spaces or separators: each maximal run of the same repeated character, written as the character followed immediately by how many times it repeats in a row.\n```\na3b2c1\n```\n\n**Important:** this includes runs of length 1 — a character that does not repeat still gets a `1` after it (for example, the `c` in `aaabbc` appears once, so it becomes `c1`, not just `c`).\n\n### Worked example\nInput `aaabbc` breaks into three runs: `aaa` (a, repeated 3 times), `bb` (b, repeated 2 times), `c` (c, repeated 1 time). Concatenating each run's character with its count gives `a3b2c1`.",
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "starterCode": {
+        "python": "import sys\n\nline = sys.stdin.readline().rstrip('\\n')\n\n# TODO: walk through `line`, tracking the current character and how many\n# times it repeats in a row (its \"run\"). Each time the next character is\n# different from the current run's character, append the run's character\n# plus its count (as a string) to the result, then start a new run with\n# the new character. Don't forget to flush the final run once the loop\n# finishes.\n#\n# Print the encoded string with print() -- one line, no separators\n# between runs, and runs of length 1 still end with \"1\".\n"
+      },
+      "testCases": [
+        { "description": "normal case with mixed run lengths", "input": "aaabbc", "expectedOutput": "a3b2c1", "weight": 1 },
+        { "description": "all-distinct characters, every run length 1", "input": "abcde", "expectedOutput": "a1b1c1d1e1", "weight": 3 },
+        { "description": "single repeated character, one long run", "input": "zzzzz", "expectedOutput": "z5", "weight": 1 },
+        { "description": "single character input", "input": "q", "expectedOutput": "q1", "weight": 1 },
+        { "description": "run of length 11, proving multi-digit counts work", "input": "aaaaaaaaaaab", "expectedOutput": "a11b1", "weight": 3 },
+        { "description": "longer mixed input with several runs", "input": "aabbbccccdddddeeeeeeff", "expectedOutput": "a2b3c4d5e6f2", "weight": 2 }
+      ]
+    }
+  ]
+}

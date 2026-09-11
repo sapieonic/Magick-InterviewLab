@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Most Frequent Character",
+      "difficulty": "MEDIUM",
+      "supportedLanguages": ["JAVASCRIPT"],
+      "description": "Read a single line of text and print the character that occurs **most often** in it.\n\n### Input\nOne line containing only letters (uppercase and/or lowercase), with no spaces. The line has at least one character.\n\n### Output\nA single character: the one that appears the most times in the line.\n\n### Rules\n- **Case matters.** `'a'` and `'A'` are counted as two different characters.\n- **Tie-break:** if two or more characters occur the same (maximum) number of times, print whichever of them appears **first** (leftmost) in the original line.\n\n### Example\nInput:\n```\naabbbcc\n```\nCounts: `a` → 2, `b` → 3, `c` → 2. `b` occurs the most times (3), so:\n\nOutput:\n```\nb\n```\n\n### Tie example\nInput:\n```\nabab\n```\n`a` and `b` both occur twice, but `a` appears first in the string, so:\n\nOutput:\n```\na\n```",
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "starterCode": {
+        "javascript": "const line = readLine() ?? '';\n\n// TODO: find the character in `line` that occurs most often.\n// If there is a tie, choose whichever of the tied characters\n// appears first (leftmost) in `line`. Remember 'a' and 'A' are\n// different characters. Print the answer with console.log().\n"
+      },
+      "testCases": [
+        {
+          "description": "normal case, one clear majority character",
+          "input": "aabbbcc",
+          "expectedOutput": "b",
+          "weight": 1
+        },
+        {
+          "description": "tie between two characters, broken by earliest first appearance",
+          "input": "abab",
+          "expectedOutput": "a",
+          "weight": 3
+        },
+        {
+          "description": "three-way tie, broken by earliest first appearance",
+          "input": "xyzxyz",
+          "expectedOutput": "x",
+          "weight": 3
+        },
+        {
+          "description": "single-character input",
+          "input": "z",
+          "expectedOutput": "z",
+          "weight": 1
+        },
+        {
+          "description": "case sensitivity: uppercase and lowercase are different characters",
+          "input": "aAAAb",
+          "expectedOutput": "A",
+          "weight": 2
+        },
+        {
+          "description": "longer input with a clear winner",
+          "input": "successful",
+          "expectedOutput": "s",
+          "weight": 2
+        }
+      ]
+    }
+  ]
+}

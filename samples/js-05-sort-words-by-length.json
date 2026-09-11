@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Sort Words by Length Then Alphabetically",
+      "difficulty": "MEDIUM",
+      "supportedLanguages": ["JAVASCRIPT"],
+      "description": "You are given a single line containing space-separated lowercase words.\n\nPrint the same words, space-separated, on **one line**, sorted by:\n\n1. **Word length**, increasing first.\n2. For words of the **same length**, **alphabetical order** (lexicographically ascending) as the tie-break.\n\nIf a word appears more than once in the input, it must appear the same number of times in the output (duplicates are kept, not removed).\n\n### Input\nA single line of space-separated lowercase words.\n```\nbanana apple kiwi fig\n```\n\n### Output\nThe words on one line, separated by single spaces, sorted as described above.\n```\nfig kiwi apple banana\n```\n\n`fig` (3 letters) comes first, then `kiwi` (4), then `apple` (5), then `banana` (6) — all different lengths here, so length alone decides the order.\n\n### Tie-break example\nFor input `pear plum kiwi lime` (all four words are 4 letters long), the length comparison is a tie for every pair, so the output falls back to plain alphabetical order:\n```\nkiwi lime pear plum\n```",
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "starterCode": {
+        "javascript": "const line = readLine() ?? '';\nconst words = line.trim().split(/\\s+/).filter(Boolean);\n\n// TODO: sort `words` by length (ascending), breaking ties alphabetically,\n// then print them space-separated on one line.\n"
+      },
+      "testCases": [
+        {
+          "description": "mixed lengths, all distinct",
+          "input": "banana apple kiwi fig",
+          "expectedOutput": "fig kiwi apple banana",
+          "weight": 1
+        },
+        {
+          "description": "same length words prove the alphabetical tie-break",
+          "input": "pear plum kiwi lime",
+          "expectedOutput": "kiwi lime pear plum",
+          "weight": 3
+        },
+        {
+          "description": "single word",
+          "input": "hello",
+          "expectedOutput": "hello",
+          "weight": 1
+        },
+        {
+          "description": "already sorted input stays unchanged",
+          "input": "a bb ccc dddd",
+          "expectedOutput": "a bb ccc dddd",
+          "weight": 1
+        },
+        {
+          "description": "duplicate words are kept, not deduplicated",
+          "input": "cat dog cat bird dog",
+          "expectedOutput": "cat cat dog dog bird",
+          "weight": 3
+        },
+        {
+          "description": "larger input, 14 words of varying lengths",
+          "input": "the quick brown fox jumps over lazy dog and cat runs fast today yes",
+          "expectedOutput": "and cat dog fox the yes fast lazy over runs brown jumps quick today",
+          "weight": 2
+        }
+      ]
+    }
+  ]
+}
