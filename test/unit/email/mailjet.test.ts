@@ -109,13 +109,23 @@ describe('sendEmail — request shape', () => {
     ).toMatchObject({ ReplyTo: { Email: 'talent@example.com' } });
   });
 
-  it('reports a sandbox send as sandboxed rather than as delivered', async () => {
+  /**
+   * The real sandbox body reports `MessageUUID: ""` and `MessageID: 0` — a
+   * fixture reusing the delivered-message ids would assert an id the sandbox
+   * can never produce, and would hide `??` handing back an empty string as
+   * though it were a correlation handle.
+   */
+  it('reports a sandbox send as sandboxed, with no id to correlate', async () => {
     h.serverEnv.mockReturnValue({ mail: { ...MAIL, sandbox: true } });
-    fetchMock.mockResolvedValue(jsonResponse(200, accepted()));
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, {
+        Messages: [{ Status: 'success', To: [{ MessageUUID: '', MessageID: 0 }] }],
+      }),
+    );
 
     const result = await sendEmail(MESSAGE);
 
-    expect(result).toEqual({ ok: true, messageId: 'uuid-1', sandbox: true });
+    expect(result).toEqual({ ok: true, messageId: null, sandbox: true });
     expect(sentPayload().SandboxMode).toBe(true);
   });
 
@@ -156,6 +166,22 @@ describe('sendEmail — a 200 is not a delivery', () => {
     expect((await sendEmail(MESSAGE)).ok).toBe(false);
   });
 
+  /**
+   * A request-level rejection carries no `Messages` at all and reports at the
+   * top level. The admin is told "the server log has the reason", so reading
+   * only `Messages` threw away the one string that answers it.
+   */
+  it('surfaces a request-level rejection reason rather than a generic line', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(400, { ErrorIdentifier: 'abc-123', ErrorMessage: 'Malformed JSON' }),
+    );
+
+    const result = await sendEmail(MESSAGE);
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toContain('Malformed JSON');
+  });
+
   it('treats an unreadable body as a failure rather than throwing', async () => {
     fetchMock.mockResolvedValue(new Response('<html>gateway</html>', { status: 502 }));
 
@@ -187,16 +213,21 @@ describe('sendEmail — never throws', () => {
     await expect(sendEmail(MESSAGE)).resolves.toMatchObject({ ok: false });
   });
 
-  it('returns a failure when the request times out', async () => {
-    const timeout = new Error('timed out');
-    timeout.name = 'TimeoutError';
-    fetchMock.mockRejectedValue(timeout);
+  // `AbortSignal.timeout` rejects with `TimeoutError` on current Node and
+  // `AbortError` on Node 20.0–20.9, which `engines: >=20` still allows.
+  it.each(['TimeoutError', 'AbortError'])(
+    'returns a timeout failure when the request aborts as %s',
+    async (name) => {
+      const timeout = new Error('timed out');
+      timeout.name = name;
+      fetchMock.mockRejectedValue(timeout);
 
-    const result = await sendEmail(MESSAGE);
+      const result = await sendEmail(MESSAGE);
 
-    expect(result.ok).toBe(false);
-    expect(result.ok === false && result.reason).toContain('did not respond');
-  });
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.reason).toContain('did not respond');
+    },
+  );
 
   it('passes an abort signal so a hung provider cannot hold the request open', async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, accepted()));

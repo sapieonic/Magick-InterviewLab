@@ -80,11 +80,73 @@ describe('candidateWelcomeEmail', () => {
     expect(message.html).toContain('Security &amp; &lt;Ops&gt;');
   });
 
-  it('tells the candidate the password is single-use', () => {
+  it('tells the candidate they will have to replace the password', () => {
     const message = candidateWelcomeEmail(INPUT);
 
     for (const part of [message.text, message.html]) {
       expect(part).toContain('choose your own password');
     }
+  });
+
+  /**
+   * Opening the workspace stamps `startedAt` and starts a countdown that is
+   * never reset. An invitation that says "Sign in" without saying that can
+   * cost a candidate their window on a click they made at a bus stop.
+   */
+  it('warns that the clock starts on opening, when the interview is timed', () => {
+    const message = candidateWelcomeEmail({
+      ...INPUT,
+      interviewTitle: 'Backend screen',
+      interviewDurationMinutes: 45,
+    });
+
+    for (const part of [message.text, message.html]) {
+      expect(part).toContain('45 minutes');
+      expect(part).toContain('clock starts');
+    }
+  });
+
+  it('says nothing about timing for an untimed interview', () => {
+    const message = candidateWelcomeEmail({ ...INPUT, interviewTitle: 'Backend screen' });
+
+    expect(message.text).not.toContain('clock starts');
+    expect(message.html).not.toContain('clock starts');
+  });
+
+  /**
+   * Mail-client survival, pinned because none of it is visible from a unit
+   * test of the copy: Outlook's Word engine ignores `display:inline-block`
+   * (so a styled `<a>` can paint white-on-white), and the original HTML
+   * carried the sign-in URL *only* inside the href — nothing to fall back to.
+   */
+  describe('renders HTML that survives a real mail client', () => {
+    const html = candidateWelcomeEmail(INPUT).html;
+
+    it('declares a charset so the em dashes cannot mojibake', () => {
+      expect(html).toContain('charset=UTF-8');
+      expect(html).toContain('name="viewport"');
+    });
+
+    it('shows the sign-in URL as text, not only as an href', () => {
+      const url = `${publicEnv.appUrl}/login`;
+      const outsideHref = html.replace(new RegExp(`href="${url}"`, 'g'), '');
+      expect(outsideHref).toContain(url);
+    });
+
+    it('builds the call to action as a table cell rather than an inline-block link', () => {
+      expect(html).toContain('bgcolor="#18181b"');
+      expect(html).not.toContain('display:inline-block');
+    });
+
+    it('repeats the typography on a wrapper, since Gmail strips <body>', () => {
+      const bodyTag = html.slice(html.indexOf('<body'), html.indexOf('>', html.indexOf('<body')));
+      expect(bodyTag).not.toContain('font-family');
+      expect(html).toContain('<table role="presentation"');
+    });
+
+    it('picks a monospace stack that exists on Windows for the password', () => {
+      expect(html).toContain('Consolas');
+      expect(html).toContain('word-break:break-all');
+    });
   });
 });

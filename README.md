@@ -123,11 +123,11 @@ Every variable, what it does, and whether it is required.
 | `MAILJET_API_KEY`               | no          | —                            | no                 | Mailjet API key. Enables candidate invitation email. Required alongside the secret and sender.                                                |
 | `MAILJET_API_SECRET`            | no          | —                            | no                 | Mailjet API secret.                                                                                                                           |
 | `MAIL_FROM_EMAIL`               | no          | —                            | no                 | Sender address. Must be a Mailjet verified sender or verified domain.                                                                         |
-| `MAIL_FROM_NAME`                | no          | `MagicVoice InterviewLab`    | no                 | Display name on the `From` header.                                                                                                            |
+| `MAIL_FROM_NAME`                | no          | `<app name> InterviewLab`    | no                 | Display name on the `From` header. Defaults from `NEXT_PUBLIC_APP_NAME`.                                                                      |
 | `MAIL_REPLY_TO`                 | no          | —                            | no                 | `Reply-To` address, when replies should not go to the sender.                                                                                 |
 | `MAILJET_SANDBOX`               | no          | `false`                      | no                 | `true` makes Mailjet validate every message and deliver nothing.                                                                              |
 | `NEXT_PUBLIC_APP_NAME`          | no          | `MagicVoice`                 | **yes**            | Brand name in the UI.                                                                                                                         |
-| `NEXT_PUBLIC_APP_URL`           | no          | `http://localhost:3000`      | **yes**            | Canonical URL.                                                                                                                                |
+| `NEXT_PUBLIC_APP_URL`           | no          | `http://localhost:3000`      | **yes**            | Canonical URL. **Required (and must not be loopback) once email is enabled** — every invitation links to it.                                  |
 | `NEXT_PUBLIC_PYODIDE_INDEX_URL` | no          | jsDelivr CDN                 | **yes**            | Where the Python (Pyodide) runtime is fetched from. Point at your own host to run air-gapped.                                                 |
 | `PORT`                          | no          | `3000`                       | no                 | Server port.                                                                                                                                  |
 | `RUN_MIGRATIONS`                | no          | `true`                       | no                 | Docker entrypoint only: run `prisma migrate deploy` on container start.                                                                       |
@@ -172,19 +172,32 @@ screen offers _"Email the sign-in details to the candidate"_ (ticked by
 default). The message carries the sign-in URL, the candidate's email and the
 temporary password, and names the interview if one was assigned at creation.
 
-Set **all three or none**. A partial configuration is refused at startup —
-the alternative is an admin ticking a checkbox that can never deliver
-anything, with the only trace a log line nobody reads.
+Set **all three or none**. A partial configuration is refused at startup, as
+is a `NEXT_PUBLIC_APP_URL` still pointing at loopback while email is on — the
+alternative is an admin ticking a checkbox that can never deliver anything, or
+mailing every candidate a `http://localhost:3000` link that reports as sent
+and cannot be taken back. "At startup" is literal: `src/instrumentation.ts`
+parses the environment during boot, so the process refuses to serve rather
+than 500ing on whichever request reads config first.
 
 Three decisions worth knowing:
 
-- **The email contains the temporary password.** The alternative — "your
+- **The email contains the temporary password**, and it is worth being exact
+  about the trade rather than waving it through. The alternative — "your
   administrator will be in touch" — leaves exactly the out-of-band handover
-  this feature exists to remove. What makes it defensible is that the
-  credential is single-use by construction: the account is created with
-  `mustChangePassword`, so the candidate replaces it at first sign-in and the
-  value sitting in their mailbox stops working at that moment. The transport
-  never logs a message body for the same reason.
+  this feature exists to remove. `mustChangePassword` is enforced by the
+  guards, so the credential buys a candidate nothing except the password
+  change itself, and the transport never logs a message body.
+  **But it is not single-use and not time-limited.** Nothing expires it:
+  `User` has no expiry column, so the password stays valid until the candidate
+  chooses to rotate it, and a candidate who never opens the email leaves a
+  working credential in a mailbox indefinitely — where anyone else with access
+  to that mailbox can rotate it first and lock them out. The window is short in
+  practice; nothing in the code makes it short. If that trade is not
+  acceptable for your deployment, the fix is a single-use signed invite link
+  (a token row with `expiresAt`/`usedAt` and a set-password landing page),
+  which would reuse this Mailjet transport and template unchanged — see
+  [Future work](#future-work).
 - **A failed send is not a failed creation.** The send runs after the row is
   committed, so a Mailjet outage leaves an account that exists and an admin
   who is told to hand the password over — which is precisely the flow that
@@ -466,8 +479,11 @@ npm run test:e2e      # playwright — full workflow against a real build
 
 Unit tests cover authentication (hashing, session token handling, login
 enumeration resistance), authorization guards, validation schemas, scoring
-(including the anti-tamper properties), and both execution adapters via an
-injected fake worker.
+(including the anti-tamper properties), both execution adapters via an
+injected fake worker, and the invitation email — the Mailjet wire contract
+(including that a v3.1 rejection arrives inside a 200), the mail-configuration
+gate, template escaping and mail-client robustness, and that a failed or
+throwing send never costs the admin a created candidate.
 
 The end-to-end suite drives the entire admin → candidate → admin workflow in
 a real Chromium against a real build and a real database: sign in as admin,

@@ -27,6 +27,8 @@ export interface SendWelcomeInput {
   email: string;
   temporaryPassword: string;
   interviewTitle?: string;
+  /** Drives the "the clock starts when you open it" warning. */
+  interviewDurationMinutes?: number;
   requested: boolean;
 }
 
@@ -43,23 +45,49 @@ export async function sendCandidateWelcomeEmail(
   input: SendWelcomeInput,
 ): Promise<WelcomeEmailStatus> {
   if (!input.requested) return 'not_requested';
-  if (!isEmailConfigured()) return 'not_configured';
 
-  const result = await sendEmail(
-    candidateWelcomeEmail({
-      name: input.name,
-      email: input.email,
-      temporaryPassword: input.temporaryPassword,
-      ...(input.interviewTitle ? { interviewTitle: input.interviewTitle } : {}),
-    }),
-  );
+  // The catch is the control, not a formality. `sendEmail` is written never to
+  // throw, but this runs inside `actionGuard` *after* the user row is
+  // committed — so any escape here becomes "Something went wrong", with the
+  // account already created and the plaintext password lost from the one
+  // screen that was ever going to show it. `isEmailConfigured()` alone can
+  // throw (it parses the environment), so the guard starts above it.
+  try {
+    if (!isEmailConfigured()) return 'not_configured';
 
-  if (!result.ok) {
-    // The reason is logged, not returned: it is operator information, and the
-    // admin's next step is the same whatever Mailjet said.
-    console.error('[candidates] welcome email not sent', { reason: result.reason });
+    const result = await sendEmail(
+      candidateWelcomeEmail({
+        name: input.name,
+        email: input.email,
+        temporaryPassword: input.temporaryPassword,
+        ...(input.interviewTitle ? { interviewTitle: input.interviewTitle } : {}),
+        ...(input.interviewDurationMinutes
+          ? { interviewDurationMinutes: input.interviewDurationMinutes }
+          : {}),
+      }),
+    );
+
+    if (!result.ok) {
+      // The reason is logged, not returned: it is operator information, and
+      // the admin's next step is the same whatever Mailjet said.
+      console.error('[candidates] welcome email not sent', { reason: result.reason });
+      return 'failed';
+    }
+
+    // The Message UUID is the only handle that ties this send to a row in the
+    // Mailjet dashboard. Without it "did this candidate get their
+    // invitation?" has no answer an operator can check.
+    console.info('[candidates] welcome email accepted', {
+      messageId: result.messageId,
+      sandbox: result.sandbox,
+    });
+    return result.sandbox ? 'sandboxed' : 'sent';
+  } catch (error) {
+    // Deliberately not `error.message`: it is unbounded provider/runtime text
+    // and this line is reached with the password still in scope.
+    console.error('[candidates] welcome email threw', {
+      name: error instanceof Error ? error.name : 'unknown',
+    });
     return 'failed';
   }
-
-  return result.sandbox ? 'sandboxed' : 'sent';
 }

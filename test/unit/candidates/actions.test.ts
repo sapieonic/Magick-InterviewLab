@@ -361,8 +361,12 @@ describe('createCandidateAction — the welcome email', () => {
     expect(welcomeEmailInput().requested).toBe(false);
   });
 
-  it('passes the assigned interview title so the email can name it', async () => {
-    h.db.interview.findUnique.mockResolvedValue({ id: 'int-1', title: 'Backend screen' });
+  it('passes the assigned interview title and duration so the email can name them', async () => {
+    h.db.interview.findUnique.mockResolvedValue({
+      id: 'int-1',
+      title: 'Backend screen',
+      durationMinutes: 60,
+    });
 
     await createCandidateAction(
       null,
@@ -376,6 +380,30 @@ describe('createCandidateAction — the welcome email', () => {
     );
 
     expect(welcomeEmailInput().interviewTitle).toBe('Backend screen');
+    // The countdown starts when the candidate opens the workspace and is
+    // never reset, so the email has to be able to warn them.
+    expect(welcomeEmailInput().interviewDurationMinutes).toBe(60);
+  });
+
+  it('omits the duration for an untimed interview rather than sending a zero', async () => {
+    h.db.interview.findUnique.mockResolvedValue({
+      id: 'int-1',
+      title: 'Backend screen',
+      durationMinutes: null,
+    });
+
+    await createCandidateAction(
+      null,
+      form({
+        name: 'Ada',
+        email: 'ada@example.com',
+        temporaryPassword: VALID_PASSWORD,
+        interviewId: 'int-1',
+        sendWelcomeEmail: 'true',
+      }),
+    );
+
+    expect(welcomeEmailInput()).not.toHaveProperty('interviewDurationMinutes');
   });
 
   /**
@@ -419,6 +447,28 @@ describe('createCandidateAction — the welcome email', () => {
     );
 
     expect(h.sendCandidateWelcomeEmail).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The one path with no second line of defence. The row is committed, so an
+   * escape here is reported as "Something went wrong" — an account that
+   * exists, and a plaintext password lost from the only screen that shows it.
+   */
+  it('still returns the candidate when the mailer rejects outright', async () => {
+    h.sendCandidateWelcomeEmail.mockRejectedValue(new Error('boom'));
+
+    const result = await createCandidateAction(
+      null,
+      form({
+        name: 'Ada',
+        email: 'ada@example.com',
+        temporaryPassword: VALID_PASSWORD,
+        sendWelcomeEmail: 'true',
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.data.id).toBe('cand-1');
   });
 
   /**

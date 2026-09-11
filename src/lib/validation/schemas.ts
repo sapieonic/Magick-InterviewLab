@@ -58,9 +58,10 @@ export const createCandidateSchema = z.object({
   email: emailSchema,
   temporaryPassword: passwordSchema,
   interviewId: z.string().max(64).optional(),
-  // An unchecked checkbox submits nothing at all, so absent must mean false
-  // here — a `z.boolean()` default of true would silently mail a candidate an
-  // admin had chosen not to mail.
+  // The coercion that matters is in `createCandidateAction`, which reads the
+  // field as `=== 'true'` — an unchecked checkbox submits nothing at all, and
+  // anything that is not the literal tick must not send. The default here is
+  // the same decision for any other caller: absent means do not mail.
   sendWelcomeEmail: z.boolean().default(false),
 });
 

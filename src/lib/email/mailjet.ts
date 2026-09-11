@@ -37,6 +37,10 @@ interface MailjetResponse {
     To?: Array<{ MessageID?: number | string; MessageUUID?: string }>;
     Errors?: Array<{ ErrorMessage?: string; ErrorCode?: string; ErrorIdentifier?: string }>;
   }>;
+  /** A request-level rejection (malformed JSON, bad payload) carries no
+   *  `Messages` at all and reports the reason at the top level instead. */
+  ErrorMessage?: string;
+  ErrorIdentifier?: string;
 }
 
 function basicAuth(mail: MailConfig): string {
@@ -50,7 +54,13 @@ function basicAuth(mail: MailConfig): string {
  */
 function readOutcome(body: MailjetResponse, sandbox: boolean): SendResult {
   const message = body.Messages?.[0];
-  if (!message) return { ok: false, reason: 'Mailjet returned no message status.' };
+  if (!message) {
+    // The admin is told "the server log has the reason", so the reason has to
+    // actually be in it: a request-level rejection reports at the top level
+    // and reading only `Messages` discarded the one useful string.
+    const detail = body.ErrorMessage ?? 'no message status';
+    return { ok: false, reason: `Mailjet rejected the request: ${detail}` };
+  }
 
   if (message.Status !== 'success') {
     const error = message.Errors?.[0];
@@ -58,8 +68,12 @@ function readOutcome(body: MailjetResponse, sandbox: boolean): SendResult {
     return { ok: false, reason: `Mailjet rejected the message: ${detail}` };
   }
 
-  const id = message.To?.[0]?.MessageUUID ?? message.To?.[0]?.MessageID ?? null;
-  return { ok: true, messageId: id === null ? null : String(id), sandbox };
+  // A sandbox acceptance reports `MessageUUID: ""` and `MessageID: 0`, so
+  // `??` alone would hand the caller an empty string as though it were a
+  // handle. Anything falsy here means "accepted, no id to correlate".
+  const to = message.To?.[0];
+  const id = to?.MessageUUID || to?.MessageID || null;
+  return { ok: true, messageId: id ? String(id) : null, sandbox };
 }
 
 /**
@@ -98,10 +112,13 @@ export async function sendEmail(message: EmailMessage): Promise<SendResult> {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (error) {
-    // A timeout arrives here as an AbortError; both are "we do not know
-    // whether it was delivered", which the caller must treat as not sent.
+    // `AbortSignal.timeout` rejects with `TimeoutError` on current Node and
+    // with `AbortError` on Node 20.0–20.9, which `engines: >=20` still
+    // allows. Either way it is "we do not know whether it was delivered",
+    // which the caller must treat as not sent.
+    const name = error instanceof Error ? error.name : '';
     const reason =
-      error instanceof Error && error.name === 'TimeoutError'
+      name === 'TimeoutError' || name === 'AbortError'
         ? `Mailjet did not respond within ${REQUEST_TIMEOUT_MS / 1000}s.`
         : 'Could not reach Mailjet.';
     console.error('[mailjet] request failed', { reason });
@@ -111,6 +128,9 @@ export async function sendEmail(message: EmailMessage): Promise<SendResult> {
   // 401/403 mean bad credentials, which is a configuration fault worth
   // naming rather than folding into a generic failure.
   if (response.status === 401 || response.status === 403) {
+    // Cancel rather than abandon: an unread body keeps undici's connection
+    // un-reusable until GC.
+    void response.body?.cancel();
     console.error('[mailjet] authentication rejected', { status: response.status });
     return { ok: false, reason: 'Mailjet rejected the API credentials.' };
   }

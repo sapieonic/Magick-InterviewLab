@@ -69,6 +69,17 @@ describe('sendCandidateWelcomeEmail — the message it builds', () => {
     expect(message.text).toContain('Temp0rary1');
     expect(message.text).toContain('Backend screen');
   });
+
+  it('carries the interview duration when the interview is timed', async () => {
+    await sendCandidateWelcomeEmail({
+      ...INPUT,
+      interviewTitle: 'Backend screen',
+      interviewDurationMinutes: 45,
+    });
+
+    const message = h.sendEmail.mock.calls[0]?.[0] as { text: string };
+    expect(message.text).toContain('45 minutes');
+  });
 });
 
 /**
@@ -96,6 +107,28 @@ describe('sendCandidateWelcomeEmail — a mail failure is not a creation failure
 
     expect(status).toBe('failed');
     expect(JSON.stringify(status)).not.toContain('sk_live_123');
+  });
+
+  /**
+   * The docblock promises "never throws". Without a catch that promise rests
+   * on `sendEmail` and `isEmailConfigured` — the latter parses the whole
+   * environment and can throw on its own.
+   */
+  it('returns failed rather than rejecting when the transport throws', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    h.sendEmail.mockRejectedValue(new Error('socket hang up'));
+
+    await expect(sendCandidateWelcomeEmail(INPUT)).resolves.toBe('failed');
+  });
+
+  it('returns failed rather than rejecting when reading the config throws', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    h.isEmailConfigured.mockImplementation(() => {
+      throw new Error('Invalid server environment');
+    });
+
+    await expect(sendCandidateWelcomeEmail(INPUT)).resolves.toBe('failed');
+    expect(h.sendEmail).not.toHaveBeenCalled();
   });
 
   it('never logs the password it just tried to send', async () => {

@@ -47,6 +47,23 @@ export interface CreatedCandidate {
   emailStatus: WelcomeEmailStatus;
 }
 
+/**
+ * `sendCandidateWelcomeEmail`, with its contract enforced rather than trusted.
+ * A thrown invitation must never cost the caller a created candidate.
+ */
+async function sendWelcome(
+  input: Parameters<typeof sendCandidateWelcomeEmail>[0],
+): Promise<WelcomeEmailStatus> {
+  try {
+    return await sendCandidateWelcomeEmail(input);
+  } catch (error) {
+    console.error('[candidates] welcome email threw past its own guard', {
+      name: error instanceof Error ? error.name : 'unknown',
+    });
+    return 'failed';
+  }
+}
+
 export async function createCandidateAction(
   _prev: ActionResult<CreatedCandidate> | null,
   formData: FormData,
@@ -69,18 +86,21 @@ export async function createCandidateAction(
     });
     if (existing) throw new AppError(DUPLICATE_EMAIL, { email: [DUPLICATE_EMAIL] });
 
-    let interviewTitle: string | undefined;
+    let assignedInterview: { title: string; durationMinutes: number | null } | undefined;
     if (input.interviewId) {
       const interview = await prisma.interview.findUnique({
         where: { id: input.interviewId },
-        select: { id: true, title: true },
+        // `durationMinutes` rides along for the email: opening the workspace
+        // starts a countdown that is never reset, so an invitation that does
+        // not mention it can cost a candidate their window.
+        select: { id: true, title: true, durationMinutes: true },
       });
       if (!interview) {
         throw new AppError('That interview no longer exists.', {
           interviewId: ['That interview no longer exists.'],
         });
       }
-      interviewTitle = interview.title;
+      assignedInterview = { title: interview.title, durationMinutes: interview.durationMinutes };
     }
 
     const candidate = await prisma.user.create({
@@ -103,11 +123,21 @@ export async function createCandidateAction(
     // transaction: the account is real from this point on, so a mail provider
     // that is down degrades to the hand-over flow this feature replaces
     // rather than failing a creation that has already happened.
-    const emailStatus = await sendCandidateWelcomeEmail({
+    //
+    // The try/catch is here as well as inside `sendCandidateWelcomeEmail`
+    // because this is the frame that owns the committed row. Relying on the
+    // callee's "never throws" docblock makes the invariant a convention: one
+    // escape and `actionGuard` turns a created account into "Something went
+    // wrong", with the plaintext password lost from the only screen that
+    // would ever have shown it.
+    const emailStatus = await sendWelcome({
       name: candidate.name,
       email: candidate.email,
       temporaryPassword: input.temporaryPassword,
-      ...(interviewTitle ? { interviewTitle } : {}),
+      ...(assignedInterview ? { interviewTitle: assignedInterview.title } : {}),
+      ...(assignedInterview?.durationMinutes
+        ? { interviewDurationMinutes: assignedInterview.durationMinutes }
+        : {}),
       requested: input.sendWelcomeEmail,
     });
 

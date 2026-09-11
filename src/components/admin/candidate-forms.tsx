@@ -56,9 +56,17 @@ async function copyToClipboard(value: string): Promise<void> {
  * just submitted, held in component state and dropped on navigation. Nothing
  * persists it, and reloading the page loses it for good — which is the point.
  */
-function RevealedPassword({ password, children }: { password: string; children: React.ReactNode }) {
+function RevealedPassword({
+  password,
+  title = 'Share this password now — it will not be shown again',
+  children,
+}: {
+  password: string;
+  title?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <Alert tone="success" title="Share this password now — it will not be shown again">
+    <Alert tone="success" title={title}>
       <div className="mt-1.5 space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <code className="bg-background rounded border px-2 py-1 font-mono text-[13px] break-all">
@@ -136,7 +144,7 @@ function TemporaryPasswordField({
  * the (server-only) email module — nothing here needs that module, and a
  * type-only import is an easy thing for a later edit to turn into a value one.
  */
-function WelcomeEmailNote({
+export function WelcomeEmailNote({
   status,
   email,
 }: {
@@ -161,14 +169,33 @@ function WelcomeEmailNote({
     case 'failed':
       return (
         <Alert tone="warning" title="The invitation email could not be sent">
-          The account was created — only the email failed. Share the password below yourself; the
-          server log has the reason.
+          The account was created — only the email failed. Share the password below yourself: it
+          cannot be emailed later without resetting the password. The server log has the reason.
+        </Alert>
+      );
+    // Reachable only when the admin ticked a box a *different* replica offered
+    // — a rolling deploy that dropped the mail credentials. Folding it in with
+    // `not_requested` made it the one non-send with no banner at all, on the
+    // case where the admin explicitly asked for the email.
+    case 'not_configured':
+      return (
+        <Alert tone="warning" title="No email was sent">
+          This server has no mail provider configured, so the invitation could not be sent. Share
+          the password below yourself.
         </Alert>
       );
     case 'not_requested':
-    case 'not_configured':
       return null;
+    default:
+      // `noImplicitReturns` is off, so a sixth status would otherwise render
+      // nothing and say nothing. This makes adding one a type error.
+      return assertNever(status);
   }
+}
+
+function assertNever(value: never): null {
+  void value;
+  return null;
 }
 
 export function CandidateCreateForm({
@@ -200,11 +227,25 @@ export function CandidateCreateForm({
     return (
       <div className="space-y-4">
         <WelcomeEmailNote status={created.emailStatus} email={created.email} />
-        <RevealedPassword password={revealed}>
+        <RevealedPassword
+          password={revealed}
+          // Without this the sent case stacks two green alerts that contradict
+          // each other: "we emailed it" directly above "share this now".
+          title={
+            created.emailStatus === 'sent'
+              ? 'Temporary password — already emailed to the candidate'
+              : 'Share this password now — it will not be shown again'
+          }
+        >
           <p>
             {created.name} ({created.email}) can sign in now and will be asked to choose their own
             password immediately.
           </p>
+          {created.emailStatus === 'sent' ? (
+            <p className="mt-1">
+              Keep it until they confirm the email arrived — it will not be shown here again.
+            </p>
+          ) : null}
         </RevealedPassword>
         <div className="flex flex-wrap gap-2">
           <Button asChild size="sm">
