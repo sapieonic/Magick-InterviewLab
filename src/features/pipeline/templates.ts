@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/db/prisma';
 import { actionGuard, AppError, NotFoundError } from '@/lib/errors';
 import { ok, type ActionResult } from '@/lib/action-result';
-import { requireCapability, requireStaff } from '@/features/auth/guards';
+import { requireCapability } from '@/features/auth/guards';
 import {
   cuidSchema,
   jobRoleInputSchema,
@@ -32,6 +32,13 @@ import type { StageType } from '@/generated/prisma/enums';
  * therefore reachable as endpoints. Each one guards for itself accordingly;
  * none of them is a bare `findMany` behind a capability the caller was trusted
  * to have checked.
+ *
+ * And each guards on the capability its *caller* gates on, not merely on being
+ * staff. `requireStaff` is `ACCESS_CONSOLE`, which every interviewer holds, so
+ * a bare `requireStaff` on these left the whole requisition list — every open
+ * role, its application count, every pipeline and its rounds — one fetch away
+ * for anyone with a console account, while the only UI that renders it is
+ * admin-only. An endpoint is as public as its weakest guard.
  */
 
 function revalidateTemplates(): void {
@@ -52,7 +59,7 @@ export interface JobRoleRow {
 }
 
 export async function listJobRoles(): Promise<JobRoleRow[]> {
-  await requireStaff();
+  await requireCapability('MANAGE_CONTENT');
   const rows = await prisma.jobRole.findMany({
     orderBy: [{ isActive: 'desc' }, { title: 'asc' }, { level: 'asc' }],
     select: {
@@ -94,7 +101,7 @@ export interface PipelineTemplateRow {
 }
 
 export async function listPipelineTemplates(): Promise<PipelineTemplateRow[]> {
-  await requireStaff();
+  await requireCapability('MANAGE_CONTENT');
   return prisma.pipelineTemplate.findMany({
     orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
     select: {
@@ -117,11 +124,12 @@ export async function listPipelineTemplates(): Promise<PipelineTemplateRow[]> {
   });
 }
 
-/** Just enough to fill a picker on the "start an application" form. */
+/** Just enough to fill a picker on the "start an application" form — so it
+ *  guards on what starting one takes, which is what every caller gates on. */
 export async function listActiveTemplateOptions(): Promise<
   Array<{ id: string; name: string; stageCount: number }>
 > {
-  await requireStaff();
+  await requireCapability('MANAGE_PIPELINE');
   const rows = await prisma.pipelineTemplate.findMany({
     where: { isActive: true },
     orderBy: { name: 'asc' },
@@ -133,7 +141,7 @@ export async function listActiveTemplateOptions(): Promise<
 export async function listActiveJobRoleOptions(): Promise<
   Array<{ id: string; title: string; level: string; pipelineTemplateId: string | null }>
 > {
-  await requireStaff();
+  await requireCapability('MANAGE_PIPELINE');
   return prisma.jobRole.findMany({
     where: { isActive: true },
     orderBy: [{ title: 'asc' }, { level: 'asc' }],

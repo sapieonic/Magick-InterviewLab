@@ -41,14 +41,24 @@ function user(role: Role, id = 'viewer'): SessionUser {
   };
 }
 
+interface RevisionFixture {
+  id: string;
+  at: string;
+  reason?: string;
+  snapshot?: unknown;
+}
+
 interface FeedbackFixture {
   id: string;
   authorId: string;
   status: 'DRAFT' | 'SUBMITTED';
   summary?: string;
+  submittedAt?: string;
+  revisions?: RevisionFixture[];
 }
 
 function feedbackRow(fixture: FeedbackFixture) {
+  const revisions = fixture.revisions ?? [];
   return {
     id: fixture.id,
     authorId: fixture.authorId,
@@ -59,12 +69,42 @@ function feedbackRow(fixture: FeedbackFixture) {
     strengths: '',
     concerns: '',
     rubricVersionId: 'rv1',
-    submittedAt: fixture.status === 'SUBMITTED' ? new Date('2026-01-02T00:00:00Z') : null,
+    submittedAt:
+      fixture.status === 'SUBMITTED'
+        ? new Date(fixture.submittedAt ?? '2026-01-02T00:00:00Z')
+        : null,
     updatedAt: new Date('2026-01-02T00:00:00Z'),
     author: { name: fixture.authorId },
     scores: [{ criterionId: 'c1', score: 3, note: '' }],
-    _count: { revisions: 0 },
+    _count: { revisions: revisions.length },
+    revisions: revisions.map((revision) => ({
+      id: revision.id,
+      createdAt: new Date(revision.at),
+      reason: revision.reason ?? '',
+      snapshot:
+        revision.snapshot === undefined
+          ? {
+              status: 'SUBMITTED',
+              recommendation: 'LEAN_NO',
+              confidence: 'LOW',
+              summary: `the first draft from ${fixture.authorId}`,
+              strengths: '',
+              concerns: '',
+              rubricVersionId: 'rv1',
+              submittedAt: '2026-01-02T00:00:00.000Z',
+              updatedAt: '2026-01-02T00:00:00.000Z',
+              scores: [{ criterionId: 'c1', score: 1, note: '' }],
+            }
+          : revision.snapshot,
+      editedBy: { name: fixture.authorId },
+    })),
   };
+}
+
+type PanelFixture = string | { userId: string; role: 'LEAD' | 'PANELIST' | 'SHADOW' };
+
+function seatOf(fixture: PanelFixture): { userId: string; role: 'LEAD' | 'PANELIST' | 'SHADOW' } {
+  return typeof fixture === 'string' ? { userId: fixture, role: 'PANELIST' } : fixture;
 }
 
 /**
@@ -74,26 +114,28 @@ function feedbackRow(fixture: FeedbackFixture) {
  */
 function mockStage(options: {
   blind: boolean;
-  panel: string[];
+  panel: PanelFixture[];
   feedback: FeedbackFixture[];
   type?: 'CODING_ASSESSMENT' | 'BEHAVIORAL';
-  assignment?: { interviewId: string; candidateId: string } | null;
+  assignment?: { interviewId: string; candidateId: string; status?: string } | null;
+  status?: string;
 }) {
   const rows = options.feedback.map(feedbackRow);
+  const seats = options.panel.map(seatOf);
   h.db.stage.findUnique.mockImplementation((args: { select: Record<string, unknown> }) => {
     if (args.select['application'] === undefined) {
       return Promise.resolve({
         id: 'stage1',
         applicationId: 'app1',
         blindFeedback: options.blind,
-        interviewers: options.panel.includes('viewer') ? [{ id: 'seat-viewer' }] : [],
+        interviewers: seats.some((seat) => seat.userId === 'viewer') ? [{ id: 'seat-viewer' }] : [],
       });
     }
     return Promise.resolve({
       id: 'stage1',
       name: 'System design',
       type: options.type ?? 'BEHAVIORAL',
-      status: 'AWAITING_FEEDBACK',
+      status: options.status ?? 'AWAITING_FEEDBACK',
       blindFeedback: options.blind,
       scheduledAt: null,
       completedAt: new Date('2026-01-01T00:00:00Z'),
@@ -117,10 +159,10 @@ function mockStage(options: {
           },
         ],
       },
-      interviewers: options.panel.map((userId) => ({
-        userId,
-        role: 'PANELIST',
-        user: { name: userId, email: `${userId}@example.com` },
+      interviewers: seats.map((seat) => ({
+        userId: seat.userId,
+        role: seat.role,
+        user: { name: seat.userId, email: `${seat.userId}@example.com` },
       })),
       feedback: rows,
       assignment: options.assignment ?? null,
@@ -330,16 +372,20 @@ describe('listMyFeedback', () => {
     id: string;
     completedAt: string | null;
     status?: 'DRAFT' | 'SUBMITTED';
+    stageStatus?: string;
+    type?: string;
+    assignment?: { status: string } | null;
   }) {
     return {
       stage: {
         id: options.id,
         name: options.id,
-        type: 'BEHAVIORAL',
-        status: 'AWAITING_FEEDBACK',
+        type: options.type ?? 'BEHAVIORAL',
+        status: options.stageStatus ?? 'AWAITING_FEEDBACK',
         scheduledAt: null,
         completedAt: options.completedAt ? new Date(options.completedAt) : null,
         createdAt: new Date('2026-01-01T00:00:00Z'),
+        assignment: options.assignment ?? null,
         application: {
           id: 'app1',
           candidate: { name: 'Ada' },
@@ -383,20 +429,29 @@ describe('listMyFeedback', () => {
 describe('listOutstandingFeedback', () => {
   const now = new Date('2026-01-10T00:00:00Z');
 
-  function stage(feedback: Array<{ authorId: string; status: 'DRAFT' | 'SUBMITTED' }>) {
+  function stage(
+    feedback: Array<{ authorId: string; status: 'DRAFT' | 'SUBMITTED' }>,
+    options: { panel?: PanelFixture[]; stageStatus?: string } = {},
+  ) {
+    const seats = (options.panel ?? ['a', 'b']).map(seatOf);
     return {
       id: 'stage1',
       name: 'Round',
       type: 'BEHAVIORAL',
-      status: 'AWAITING_FEEDBACK',
+      status: options.stageStatus ?? 'AWAITING_FEEDBACK',
       scheduledAt: null,
       completedAt: new Date('2026-01-05T00:00:00Z'),
       createdAt: new Date('2026-01-01T00:00:00Z'),
+      assignment: null,
       application: { id: 'app1', candidate: { name: 'Ada' }, jobRole: null },
-      interviewers: [
-        { userId: 'a', user: { name: 'Alice', email: 'a@example.com' } },
-        { userId: 'b', user: { name: 'Bob', email: 'b@example.com' } },
-      ],
+      interviewers: seats.map((seatRow) => ({
+        userId: seatRow.userId,
+        role: seatRow.role,
+        user: {
+          name: seatRow.userId === 'a' ? 'Alice' : seatRow.userId === 'b' ? 'Bob' : seatRow.userId,
+          email: `${seatRow.userId}@example.com`,
+        },
+      })),
       feedback,
     };
   }
@@ -526,5 +581,379 @@ describe('resolveSubmissionScope and getSubmissionNotes', () => {
     h.db.submission.findUnique.mockResolvedValue(null);
 
     expect(await getSubmissionNotes(user('ADMIN'), 'nope')).toEqual([]);
+  });
+});
+
+/**
+ * A coding round has two writers — a recruiter setting `Stage.status` and the
+ * candidate's own workspace moving the assignment — and `stage-status.ts`
+ * claims the two can never be seen to disagree because every read model
+ * returns the overlay. This module used not to, so the same round read
+ * "Awaiting feedback" on the board and "Pending" here.
+ */
+describe('the stored status is never what a reader is shown', () => {
+  it('overlays a coding round with what the candidate actually did', async () => {
+    mockStage({
+      blind: false,
+      panel: ['viewer'],
+      feedback: [],
+      type: 'CODING_ASSESSMENT',
+      status: 'PENDING',
+      assignment: { interviewId: 'int1', candidateId: 'cand1', status: 'COMPLETED' },
+    });
+    h.db.submission.findMany.mockResolvedValue([]);
+
+    const view = await getStageForFeedback(user('INTERVIEWER'), 'stage1');
+
+    expect(view?.stage.status).toBe('AWAITING_FEEDBACK');
+  });
+
+  it('leaves a round that is not an assessment exactly as stored', async () => {
+    mockStage({ blind: false, panel: ['viewer'], feedback: [], status: 'SCHEDULED' });
+
+    const view = await getStageForFeedback(user('INTERVIEWER'), 'stage1');
+
+    expect(view?.stage.status).toBe('SCHEDULED');
+  });
+
+  it('overlays the queue and the chase list too', async () => {
+    h.db.stageInterviewer.findMany.mockResolvedValue([
+      {
+        stage: {
+          id: 'coding',
+          name: 'Take-home',
+          type: 'CODING_ASSESSMENT',
+          status: 'PENDING',
+          scheduledAt: null,
+          completedAt: null,
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+          assignment: { status: 'COMPLETED' },
+          application: { id: 'app1', candidate: { name: 'Ada' }, jobRole: null },
+          feedback: [],
+        },
+      },
+    ]);
+    const mine = await listMyFeedback(user('INTERVIEWER'), new Date('2026-01-10T00:00:00Z'));
+    expect(mine[0]?.stageStatus).toBe('AWAITING_FEEDBACK');
+
+    h.db.stage.findMany.mockResolvedValue([
+      {
+        id: 'coding',
+        name: 'Take-home',
+        type: 'CODING_ASSESSMENT',
+        status: 'PENDING',
+        scheduledAt: null,
+        completedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        assignment: { status: 'COMPLETED' },
+        application: { id: 'app1', candidate: { name: 'Ada' }, jobRole: null },
+        interviewers: [
+          { userId: 'a', role: 'PANELIST', user: { name: 'Alice', email: 'a@example.com' } },
+        ],
+        feedback: [],
+      },
+    ]);
+    const chase = await listOutstandingFeedback(
+      user('RECRUITER'),
+      new Date('2026-01-10T00:00:00Z'),
+    );
+
+    // Stored `PENDING` would have filtered this round out as not yet due; the
+    // assessment has in fact been submitted and somebody owes a review.
+    expect(chase[0]?.stageStatus).toBe('AWAITING_FEEDBACK');
+    expect(chase[0]?.owed.map((person) => person.userId)).toEqual(['a']);
+  });
+});
+
+/**
+ * A shadow is an observer. The denominator excluded them while the numerator
+ * counted every submitted row, so a keen shadow made a two-person panel render
+ * "3 of 2 submitted".
+ */
+describe('the panel denominator', () => {
+  it('does not expect a scorecard from a shadow', async () => {
+    mockStage({
+      blind: false,
+      panel: ['viewer', 'other', { userId: 'learner', role: 'SHADOW' }],
+      feedback: [{ id: 'f-viewer', authorId: 'viewer', status: 'SUBMITTED' }],
+    });
+
+    const view = await getStageForFeedback(user('INTERVIEWER'), 'stage1');
+
+    expect(view?.progress).toEqual({ panelSize: 2, submittedCount: 1, outstandingCount: 1 });
+    // The seat itself is still shown — the shadow is in the room.
+    expect(view?.panel.map((member) => member.userId)).toContain('learner');
+  });
+
+  it('does not count one either, so submitted can never exceed expected', async () => {
+    mockStage({
+      blind: false,
+      panel: ['viewer', 'other', { userId: 'learner', role: 'SHADOW' }],
+      feedback: [
+        { id: 'f-viewer', authorId: 'viewer', status: 'SUBMITTED' },
+        { id: 'f-other', authorId: 'other', status: 'SUBMITTED' },
+        { id: 'f-learner', authorId: 'learner', status: 'SUBMITTED' },
+      ],
+    });
+
+    const view = await getStageForFeedback(user('INTERVIEWER'), 'stage1');
+
+    expect(view?.progress).toEqual({ panelSize: 2, submittedCount: 2, outstandingCount: 0 });
+    expect(view?.progress.submittedCount).toBeLessThanOrEqual(view?.progress.panelSize ?? 0);
+  });
+
+  it('never chases a shadow for a scorecard', async () => {
+    h.db.stage.findMany.mockResolvedValue([
+      {
+        id: 'stage1',
+        name: 'Round',
+        type: 'BEHAVIORAL',
+        status: 'AWAITING_FEEDBACK',
+        scheduledAt: null,
+        completedAt: new Date('2026-01-05T00:00:00Z'),
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        assignment: null,
+        application: { id: 'app1', candidate: { name: 'Ada' }, jobRole: null },
+        interviewers: [
+          { userId: 'a', role: 'PANELIST', user: { name: 'Alice', email: 'a@example.com' } },
+          { userId: 'learner', role: 'SHADOW', user: { name: 'Lee', email: 'l@example.com' } },
+        ],
+        feedback: [{ authorId: 'learner', status: 'SUBMITTED' }],
+      },
+    ]);
+
+    const rows = await listOutstandingFeedback(user('RECRUITER'), new Date('2026-01-10T00:00:00Z'));
+
+    expect(rows[0]?.owed.map((person) => person.userId)).toEqual(['a']);
+    expect(rows[0]?.panelSize).toBe(1);
+    // The shadow's scorecard exists and is not part of the fraction.
+    expect(rows[0]?.submittedCount).toBe(0);
+  });
+});
+
+/** Nobody is late for an interview that has not happened. */
+describe('a scorecard is not due until the round has run', () => {
+  const now = new Date('2026-02-01T00:00:00Z');
+
+  it('lists a round still to come without an age', async () => {
+    h.db.stageInterviewer.findMany.mockResolvedValue([
+      {
+        stage: {
+          id: 'upcoming',
+          name: 'Onsite',
+          type: 'BEHAVIORAL',
+          status: 'SCHEDULED',
+          scheduledAt: new Date('2026-02-14T00:00:00Z'),
+          completedAt: null,
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+          assignment: null,
+          application: { id: 'app1', candidate: { name: 'Ada' }, jobRole: null },
+          feedback: [],
+        },
+      },
+    ]);
+
+    const rows = await listMyFeedback(user('INTERVIEWER'), now);
+
+    expect(rows[0]?.due).toBe(false);
+    expect(rows[0]?.ageDays).toBeNull();
+  });
+
+  it('sorts a due round ahead of one that has not happened', async () => {
+    h.db.stageInterviewer.findMany.mockResolvedValue([
+      {
+        stage: {
+          id: 'upcoming',
+          name: 'Onsite',
+          type: 'BEHAVIORAL',
+          status: 'SCHEDULED',
+          scheduledAt: null,
+          completedAt: null,
+          // Older than the due round, and still second: not due is not late.
+          createdAt: new Date('2025-12-01T00:00:00Z'),
+          assignment: null,
+          application: { id: 'app1', candidate: { name: 'Ada' }, jobRole: null },
+          feedback: [],
+        },
+      },
+      {
+        stage: {
+          id: 'ran',
+          name: 'Screen',
+          type: 'BEHAVIORAL',
+          status: 'AWAITING_FEEDBACK',
+          scheduledAt: null,
+          completedAt: new Date('2026-01-20T00:00:00Z'),
+          createdAt: new Date('2026-01-01T00:00:00Z'),
+          assignment: null,
+          application: { id: 'app1', candidate: { name: 'Ada' }, jobRole: null },
+          feedback: [],
+        },
+      },
+    ]);
+
+    const rows = await listMyFeedback(user('INTERVIEWER'), now);
+
+    expect(rows.map((row) => row.stageId)).toEqual(['ran', 'upcoming']);
+    expect(rows[0]?.ageDays).toBe(12);
+  });
+
+  it('keeps a round nobody has sat off the chase list entirely', async () => {
+    h.db.stage.findMany.mockResolvedValue([
+      {
+        id: 'upcoming',
+        name: 'Onsite',
+        type: 'BEHAVIORAL',
+        status: 'SCHEDULED',
+        scheduledAt: new Date('2026-02-14T00:00:00Z'),
+        completedAt: null,
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+        assignment: null,
+        application: { id: 'app1', candidate: { name: 'Ada' }, jobRole: null },
+        interviewers: [
+          { userId: 'a', role: 'PANELIST', user: { name: 'Alice', email: 'a@example.com' } },
+        ],
+        feedback: [],
+      },
+    ]);
+
+    expect(await listOutstandingFeedback(user('RECRUITER'), now)).toEqual([]);
+  });
+});
+
+/** Both list queries read unbounded tables; both are now bounded. */
+describe('the list queries are bounded', () => {
+  it('takes a limit and asks for the oldest rounds first', async () => {
+    h.db.stageInterviewer.findMany.mockResolvedValue([]);
+    h.db.stage.findMany.mockResolvedValue([]);
+
+    await listMyFeedback(user('INTERVIEWER'), new Date(), 25);
+    await listOutstandingFeedback(user('RECRUITER'), new Date(), 40);
+
+    const mine = h.db.stageInterviewer.findMany.mock.calls[0]?.[0] as {
+      take: number;
+      orderBy: unknown;
+    };
+    expect(mine.take).toBe(25);
+    expect(mine.orderBy).toEqual({ stage: { createdAt: 'asc' } });
+
+    const chase = h.db.stage.findMany.mock.calls[0]?.[0] as {
+      take: number;
+      orderBy: unknown;
+      where: { interviewers: unknown };
+    };
+    expect(chase.take).toBe(40);
+    expect(chase.orderBy).toEqual({ createdAt: 'asc' });
+    // A round whose only seats are shadows owes nothing, so it is not read.
+    expect(chase.where.interviewers).toEqual({ some: { role: { not: 'SHADOW' } } });
+  });
+});
+
+/**
+ * `FeedbackRevision` was written from the first commit and read by nothing but
+ * a `_count`, while the UI promised "the earlier versions are kept".
+ */
+describe('the revision trail is readable', () => {
+  it('returns each prior version, newest first, with who edited it and why', async () => {
+    mockStage({
+      blind: false,
+      panel: ['viewer'],
+      feedback: [
+        {
+          id: 'f-viewer',
+          authorId: 'viewer',
+          status: 'SUBMITTED',
+          revisions: [
+            { id: 'rev2', at: '2026-01-09T00:00:00Z', reason: 'Corrected the score.' },
+            { id: 'rev1', at: '2026-01-04T00:00:00Z' },
+          ],
+        },
+      ],
+    });
+
+    const own = (await getStageForFeedback(user('INTERVIEWER'), 'stage1'))?.own;
+
+    expect(own?.revisionCount).toBe(2);
+    expect(own?.lastRevisedAt).toEqual(new Date('2026-01-09T00:00:00Z'));
+    expect(own?.revisions.map((revision) => revision.id)).toEqual(['rev2', 'rev1']);
+    expect(own?.revisions[0]?.reason).toBe('Corrected the score.');
+    expect(own?.revisions[0]?.editedByName).toBe('viewer');
+    expect(own?.revisions[0]?.summary).toBe('the first draft from viewer');
+    expect(own?.revisions[0]?.recommendation).toBe('LEAN_NO');
+    expect(own?.revisions[0]?.scores).toEqual([{ criterionId: 'c1', score: 1, note: '' }]);
+  });
+
+  it('reports a snapshot it cannot parse rather than rendering an empty version', async () => {
+    mockStage({
+      blind: false,
+      panel: ['viewer'],
+      feedback: [
+        {
+          id: 'f-viewer',
+          authorId: 'viewer',
+          status: 'SUBMITTED',
+          revisions: [{ id: 'rev1', at: '2026-01-04T00:00:00Z', snapshot: 'not an object' }],
+        },
+      ],
+    });
+
+    const own = (await getStageForFeedback(user('INTERVIEWER'), 'stage1'))?.own;
+
+    expect(own?.revisions[0]?.unreadable).toBe(true);
+    expect(own?.revisionCount).toBe(1);
+  });
+
+  /**
+   * The bypass: submit anything to unlock the panel, read it, then rewrite.
+   * `submittedAt` is preserved, so only the trail can say this happened.
+   */
+  it('says when a revision was made after the panel became readable', async () => {
+    mockStage({
+      blind: true,
+      panel: ['viewer', 'other'],
+      feedback: [
+        {
+          id: 'f-viewer',
+          authorId: 'viewer',
+          status: 'SUBMITTED',
+          submittedAt: '2026-01-02T00:00:00Z',
+          revisions: [{ id: 'rev1', at: '2026-01-08T00:00:00Z' }],
+        },
+        {
+          id: 'f-other',
+          authorId: 'other',
+          status: 'SUBMITTED',
+          submittedAt: '2026-01-05T00:00:00Z',
+        },
+      ],
+    });
+
+    const view = await getStageForFeedback(user('INTERVIEWER'), 'stage1');
+
+    expect(view?.own?.revisedAfterReadingPanel).toBe(true);
+    // The original submission time stands, which is exactly why the flag is
+    // needed: nothing else on the card says the content is six days younger.
+    expect(view?.own?.submittedAt).toEqual(new Date('2026-01-02T00:00:00Z'));
+  });
+
+  it('does not claim it when the author was the only one to have submitted', async () => {
+    mockStage({
+      blind: true,
+      panel: ['viewer', 'other'],
+      feedback: [
+        {
+          id: 'f-viewer',
+          authorId: 'viewer',
+          status: 'SUBMITTED',
+          submittedAt: '2026-01-02T00:00:00Z',
+          revisions: [{ id: 'rev1', at: '2026-01-03T00:00:00Z' }],
+        },
+        { id: 'f-other', authorId: 'other', status: 'DRAFT' },
+      ],
+    });
+
+    const view = await getStageForFeedback(user('INTERVIEWER'), 'stage1');
+
+    expect(view?.own?.revisedAfterReadingPanel).toBe(false);
   });
 });

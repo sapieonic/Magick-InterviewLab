@@ -1,7 +1,14 @@
 import 'server-only';
+import { z } from 'zod';
 import { prisma } from '@/lib/db/prisma';
 import { can, isStaff } from '@/features/auth/capabilities';
 import { canViewApplication, getPanelSeat } from '@/features/pipeline/access';
+import {
+  countScorecards,
+  deriveCodingStageStatus,
+  isExpectedToScore,
+  isScorecardDue,
+} from '@/features/pipeline/stage-status';
 import {
   blindReason,
   visibleFeedback,
@@ -11,6 +18,7 @@ import {
 import { parseStoredResults, type ParsedResults } from '@/features/submissions/stored-results';
 import type { SessionUser } from '@/features/auth/session';
 import type {
+  AssignmentStatus,
   Confidence,
   FeedbackStatus,
   InterviewerRole,
@@ -43,11 +51,25 @@ function ageInDays(since: Date, now: Date): number {
 /**
  * When the clock on a scorecard started.
  *
- * A stage that is finished but unscored is the thing being chased, so its
- * completion time is the honest start; a stage that has not completed falls
- * back to when it was meant to happen, and finally to when it was created, so
- * a round nobody ever scheduled still ages rather than sitting at zero days
- * forever.
+ * Every step of this is an estimate of one thing — when the round actually
+ * happened — taken most-specific-evidence-first. `completedAt` is written only
+ * when a stage is marked `COMPLETE`, which covers the two populations that
+ * carry one: a round that is complete and still missing a scorecard, and a
+ * round reopened from `COMPLETE` back to `AWAITING_FEEDBACK`. A round that
+ * reached `AWAITING_FEEDBACK` without ever being marked complete has no
+ * completion stamp at all, so it ages from the slot it was booked into, and a
+ * round nobody ever scheduled from when its row was created — otherwise it
+ * would sit at zero days forever.
+ *
+ * The previous comment claimed `completedAt` was the start for any
+ * finished-but-unscored round, which is not what the column means; the two
+ * populations are not on different clocks, they are on the best clock each one
+ * has.
+ *
+ * What this is emphatically *not* is a claim that anything is owed. A round
+ * two weeks out has a `createdAt`, and ageing from it is how this page came to
+ * chase panellists for interviews that have not happened. `isScorecardDue` is
+ * what decides that, and both callers report an age only when it says so.
  */
 function waitingSince(stage: {
   completedAt: Date | null;
@@ -55,6 +77,24 @@ function waitingSince(stage: {
   createdAt: Date;
 }): Date {
   return stage.completedAt ?? stage.scheduledAt ?? stage.createdAt;
+}
+
+/**
+ * The status a reader is shown.
+ *
+ * For a coding round that is the assignment's business, not the stage row's —
+ * see the long note in `stage-status.ts`. This module used to return the
+ * stored value while the board and the application page returned the overlay,
+ * so one round at one moment read "Awaiting feedback" in two places and
+ * "Pending" in a third. The overlay is never written back.
+ */
+export function effectiveStageStatus(stage: {
+  type: StageType;
+  status: StageStatus;
+  assignment: { status: AssignmentStatus } | null;
+}): StageStatus {
+  if (stage.type !== 'CODING_ASSESSMENT') return stage.status;
+  return deriveCodingStageStatus(stage.status, stage.assignment?.status ?? null);
 }
 
 export interface CriterionView {
@@ -79,6 +119,27 @@ export interface FeedbackScoreView {
   note: string;
 }
 
+/** One earlier version of a scorecard, read back out of the append-only trail. */
+export interface FeedbackRevisionView {
+  id: string;
+  /** When this version was superseded — i.e. when the edit happened. */
+  at: Date;
+  editedByName: string | null;
+  reason: string;
+  recommendation: Recommendation | null;
+  confidence: Confidence | null;
+  summary: string;
+  strengths: string;
+  concerns: string;
+  scores: FeedbackScoreView[];
+  /**
+   * The snapshot is a free-form Json column. True when it could not be read
+   * back in the shape it was written — the row is still evidence that an edit
+   * happened, and saying so is better than rendering an empty version.
+   */
+  unreadable: boolean;
+}
+
 export interface FeedbackView {
   id: string;
   authorId: string;
@@ -93,6 +154,27 @@ export interface FeedbackView {
   submittedAt: Date | null;
   updatedAt: Date;
   revisionCount: number;
+  /**
+   * When the scorecard was last rewritten, from the trail itself. Not
+   * `updatedAt`, which also moves when the scores are re-written on a save.
+   */
+  lastRevisedAt: Date | null;
+  /**
+   * True when at least one other panellist's scorecard was already submitted
+   * at the moment of the last revision — i.e. the author could read the panel
+   * before rewriting.
+   *
+   * The bypass this exists to make legible: submit a one-character summary
+   * purely to unlock the panel, read everyone else, then revise with the real
+   * content. `submittedAt` is deliberately preserved on a revision, so the
+   * rewrite otherwise looks contemporaneous. Raising the minimum summary
+   * length would punish honest short feedback and stop nobody; showing the
+   * reader when the edit happened, and that there was something to read when
+   * it did, costs the honest reviser nothing.
+   */
+  revisedAfterReadingPanel: boolean;
+  /** Newest first, bounded — see `FEEDBACK_SELECT`. */
+  revisions: FeedbackRevisionView[];
   scores: FeedbackScoreView[];
 }
 
@@ -152,7 +234,14 @@ export interface StageFeedbackView {
   own: FeedbackView | null;
   others: FeedbackView[];
   hidden: HiddenFeedbackSummary;
+  /** Every seat, shadows included — the blind rule withholds content, and this
+   *  is who is in the room. The counts below are a different question. */
   panel: PanelMemberView[];
+  /**
+   * The fraction a reader is shown. `panelSize` is the seats that *owe* a
+   * scorecard and `submittedCount` the ones that have written one, both from
+   * `countScorecards`, so "3 of 2 submitted" is not expressible.
+   */
   progress: { panelSize: number; submittedCount: number; outstandingCount: number };
   /** Only populated for CODING_ASSESSMENT stages. */
   submissions: StageSubmissionView[];
@@ -174,6 +263,23 @@ export const FEEDBACK_SELECT = {
   author: { select: { name: true } },
   scores: { select: { criterionId: true, score: true, note: true } },
   _count: { select: { revisions: true } },
+  // The trail, actually read. It was written by `submitFeedbackAction` from
+  // the first commit and read by nothing but a `_count`, which left the
+  // product promising "the earlier versions are kept" with no way to see one.
+  // Newest first and bounded: a scorecard rewritten more than ten times is a
+  // conversation to have, not a page to render, and `_count` still reports the
+  // true total.
+  revisions: {
+    orderBy: { createdAt: 'desc' },
+    take: 10,
+    select: {
+      id: true,
+      createdAt: true,
+      reason: true,
+      snapshot: true,
+      editedBy: { select: { name: true } },
+    },
+  },
 } as const;
 
 export type FeedbackRow = {
@@ -191,9 +297,78 @@ export type FeedbackRow = {
   author: { name: string };
   scores: Array<{ criterionId: string; score: number; note: string }>;
   _count: { revisions: number };
+  revisions: Array<{
+    id: string;
+    createdAt: Date;
+    reason: string;
+    snapshot: unknown;
+    editedBy: { name: string } | null;
+  }>;
 };
 
-export function toFeedbackView(row: FeedbackRow): FeedbackView {
+const RECOMMENDATIONS = [
+  'STRONG_HIRE',
+  'HIRE',
+  'LEAN_HIRE',
+  'LEAN_NO',
+  'NO',
+  'STRONG_NO',
+] as const satisfies readonly Recommendation[];
+
+/**
+ * `FeedbackRevision.snapshot` is Json, so it is whatever was written whenever
+ * it was written. Read it defensively and report a version that will not parse
+ * rather than dropping the row: an audit trail with a silent hole in it is
+ * worse than one that says "this entry is unreadable".
+ */
+const revisionSnapshotSchema = z.object({
+  recommendation: z.enum(RECOMMENDATIONS).nullish(),
+  confidence: z.enum(['HIGH', 'MEDIUM', 'LOW']).nullish(),
+  summary: z.string().nullish(),
+  strengths: z.string().nullish(),
+  concerns: z.string().nullish(),
+  scores: z
+    .array(
+      z.object({
+        criterionId: z.string(),
+        score: z.number(),
+        note: z.string().nullish(),
+      }),
+    )
+    .nullish(),
+});
+
+function toRevisionView(row: FeedbackRow['revisions'][number]): FeedbackRevisionView {
+  const parsed = revisionSnapshotSchema.safeParse(row.snapshot);
+  const data = parsed.success ? parsed.data : null;
+  return {
+    id: row.id,
+    at: row.createdAt,
+    editedByName: row.editedBy?.name ?? null,
+    reason: row.reason,
+    recommendation: data?.recommendation ?? null,
+    confidence: data?.confidence ?? null,
+    summary: data?.summary ?? '',
+    strengths: data?.strengths ?? '',
+    concerns: data?.concerns ?? '',
+    scores: (data?.scores ?? []).map((score) => ({
+      criterionId: score.criterionId,
+      score: score.score,
+      note: score.note ?? '',
+    })),
+    unreadable: !parsed.success,
+  };
+}
+
+/**
+ * `panel` is the rest of the stage's feedback rows, and only their *status* is
+ * read — who had submitted, and when. That is the same counting this module
+ * already does beside the blind rule; no prose crosses from one row to
+ * another. Callers that have no stage context pass nothing and get `false`.
+ */
+export function toFeedbackView(row: FeedbackRow, panel: readonly FeedbackRow[] = []): FeedbackView {
+  const revisions = row.revisions.map(toRevisionView);
+  const lastRevisedAt = revisions[0]?.at ?? null;
   return {
     id: row.id,
     authorId: row.authorId,
@@ -208,6 +383,17 @@ export function toFeedbackView(row: FeedbackRow): FeedbackView {
     submittedAt: row.submittedAt,
     updatedAt: row.updatedAt,
     revisionCount: row._count.revisions,
+    lastRevisedAt,
+    revisedAfterReadingPanel:
+      lastRevisedAt !== null &&
+      panel.some(
+        (other) =>
+          other.authorId !== row.authorId &&
+          other.status === 'SUBMITTED' &&
+          other.submittedAt !== null &&
+          other.submittedAt.getTime() <= lastRevisedAt.getTime(),
+      ),
+    revisions,
     scores: row.scores,
   };
 }
@@ -271,10 +457,12 @@ export async function getStageForFeedback(
         },
       },
       feedback: { select: FEEDBACK_SELECT },
-      assignment: { select: { interviewId: true, candidateId: true } },
+      assignment: { select: { interviewId: true, candidateId: true, status: true } },
     },
   });
   if (!stage) return null;
+
+  const status = effectiveStageStatus(stage);
 
   const ownRow = stage.feedback.find((row) => row.authorId === viewer.id) ?? null;
 
@@ -294,7 +482,10 @@ export async function getStageForFeedback(
   const readableIds = new Set(readable.map((row) => row.id));
   const withheld = stage.feedback.filter((row) => !readableIds.has(row.id));
 
-  const submittedCount = stage.feedback.filter((row) => row.status === 'SUBMITTED').length;
+  // One rule for both halves of the fraction, shared with the board so the two
+  // can never render different denominators for the same round. A shadow is an
+  // observer: not expected, and not counted if they submit anyway.
+  const counts = countScorecards(stage.interviewers, stage.feedback, status);
 
   const submissions =
     stage.type === 'CODING_ASSESSMENT' && stage.assignment
@@ -306,7 +497,7 @@ export async function getStageForFeedback(
       id: stage.id,
       name: stage.name,
       type: stage.type,
-      status: stage.status,
+      status,
       blindFeedback: stage.blindFeedback,
       scheduledAt: stage.scheduledAt,
       completedAt: stage.completedAt,
@@ -331,10 +522,10 @@ export async function getStageForFeedback(
       canWrite: seat.isPanelist && can(viewer.role, 'GIVE_FEEDBACK'),
       hasSubmitted: context.viewerHasSubmitted,
     },
-    own: ownRow ? toFeedbackView(ownRow) : null,
+    own: ownRow ? toFeedbackView(ownRow, stage.feedback) : null,
     others: readable
       .filter((row) => row.authorId !== viewer.id)
-      .map(toFeedbackView)
+      .map((row) => toFeedbackView(row, stage.feedback))
       .sort((a, b) => (a.submittedAt?.getTime() ?? 0) - (b.submittedAt?.getTime() ?? 0)),
     hidden: {
       submitted: withheld.filter((row) => row.status === 'SUBMITTED').length,
@@ -351,9 +542,9 @@ export async function getStageForFeedback(
       ),
     })),
     progress: {
-      panelSize: stage.interviewers.length,
-      submittedCount,
-      outstandingCount: Math.max(0, stage.interviewers.length - submittedCount),
+      panelSize: counts.expected,
+      submittedCount: counts.submitted,
+      outstandingCount: counts.outstanding,
     },
     submissions,
   };
@@ -400,6 +591,7 @@ export interface MyFeedbackRow {
   stageId: string;
   stageName: string;
   stageType: StageType;
+  /** Derived, never the stored row — see `effectiveStageStatus`. */
   stageStatus: StageStatus;
   applicationId: string;
   candidateName: string;
@@ -407,23 +599,40 @@ export interface MyFeedbackRow {
   status: FeedbackStatus | null;
   submittedAt: Date | null;
   waitingSince: Date;
-  ageDays: number;
+  /** True once the round has actually run. A seat on next month's interview is
+   *  not work yet, however long ago the panel was set. */
+  due: boolean;
+  /** Null when the round is not due: there is no elapsed time to report, and
+   *  showing one is how this page came to chase people for rounds that have
+   *  not happened. */
+  ageDays: number | null;
 }
+
+/**
+ * How many of the viewer's seats are read at once.
+ *
+ * A queue is a working list, not an archive. The order is oldest round first,
+ * so what a bound drops is the most recently created seat — the least likely
+ * to be the thing anyone is being chased for.
+ */
+const MY_FEEDBACK_LIMIT = 200;
 
 /**
  * The viewer's own queue.
  *
  * Age is the product, not a decoration: feedback that arrives a fortnight
  * later is written from memory, and the only thing that reliably shortens the
- * gap is showing someone how long they have been the blocker. Outstanding
- * rounds sort first and oldest to newest; submitted ones stay listed so the
- * page is also the way back to a scorecard you want to revise.
+ * gap is showing someone how long they have been the blocker. Rounds that are
+ * due and unwritten sort first and oldest to newest, then rounds still to
+ * come, then submitted ones — which stay listed so the page is also the way
+ * back to a scorecard you want to revise.
  *
  * `now` is a parameter so the ageing can be pinned by a test.
  */
 export async function listMyFeedback(
   viewer: SessionUser,
   now: Date = new Date(),
+  limit: number = MY_FEEDBACK_LIMIT,
 ): Promise<MyFeedbackRow[]> {
   if (!isStaff(viewer.role)) return [];
 
@@ -437,6 +646,8 @@ export async function listMyFeedback(
         application: { status: { in: ['ACTIVE', 'ON_HOLD'] } },
       },
     },
+    orderBy: { stage: { createdAt: 'asc' } },
+    take: limit,
     select: {
       stage: {
         select: {
@@ -447,6 +658,9 @@ export async function listMyFeedback(
           scheduledAt: true,
           completedAt: true,
           createdAt: true,
+          // Status only, and only to overlay a coding round's stored status
+          // with what the candidate actually did — never the submissions.
+          assignment: { select: { status: true } },
           application: {
             select: {
               id: true,
@@ -468,25 +682,30 @@ export async function listMyFeedback(
   const rows = seats.map(({ stage }) => {
     const own = stage.feedback[0] ?? null;
     const since = waitingSince(stage);
+    const stageStatus = effectiveStageStatus(stage);
+    const due = isScorecardDue(stageStatus);
     return {
       stageId: stage.id,
       stageName: stage.name,
       stageType: stage.type,
-      stageStatus: stage.status,
+      stageStatus,
       applicationId: stage.application.id,
       candidateName: stage.application.candidate.name,
       jobRoleTitle: stage.application.jobRole?.title ?? null,
       status: own?.status ?? null,
       submittedAt: own?.submittedAt ?? null,
       waitingSince: since,
-      ageDays: ageInDays(since, now),
+      due,
+      ageDays: due ? ageInDays(since, now) : null,
     };
   });
 
+  // Owed and late, then owed and not yet due, then done. Within each band the
+  // oldest round leads, which is the order the page is read in.
+  const band = (row: MyFeedbackRow): number => (row.status === 'SUBMITTED' ? 2 : row.due ? 0 : 1);
+
   return rows.sort((a, b) => {
-    const aDone = a.status === 'SUBMITTED';
-    const bDone = b.status === 'SUBMITTED';
-    if (aDone !== bDone) return aDone ? 1 : -1;
+    if (band(a) !== band(b)) return band(a) - band(b);
     return a.waitingSince.getTime() - b.waitingSince.getTime();
   });
 }
@@ -503,16 +722,29 @@ export interface OutstandingFeedbackRow {
   stageId: string;
   stageName: string;
   stageType: StageType;
+  /** Derived, never the stored row — see `effectiveStageStatus`. */
   stageStatus: StageStatus;
   applicationId: string;
   candidateName: string;
   jobRoleTitle: string | null;
+  /** Seats that owe a scorecard, and submissions from those same seats. One
+   *  rule, shared with the board — see `countScorecards`. */
   panelSize: number;
   submittedCount: number;
   waitingSince: Date;
   ageDays: number;
   owed: OutstandingOwner[];
 }
+
+/**
+ * How many stages the chase list reads.
+ *
+ * This query cannot express "has somebody outstanding" in SQL — that is a
+ * comparison between two counts on different relations — so it reads rounds
+ * and filters. Oldest first, so the bound drops the newest rounds, which are
+ * the least likely to be late.
+ */
+const OUTSTANDING_LIMIT = 300;
 
 /**
  * Who owes what, across the pipeline — the recruiter's and hiring manager's
@@ -525,16 +757,25 @@ export interface OutstandingFeedbackRow {
 export async function listOutstandingFeedback(
   viewer: SessionUser,
   now: Date = new Date(),
+  limit: number = OUTSTANDING_LIMIT,
 ): Promise<OutstandingFeedbackRow[]> {
   if (!isStaff(viewer.role) || !can(viewer.role, 'VIEW_ALL_APPLICATIONS')) return [];
 
   const stages = await prisma.stage.findMany({
     where: {
+      // Stored status, deliberately: a coding round stored `PENDING` whose
+      // assignment is finished derives to `AWAITING_FEEDBACK` and *is* owed,
+      // so the only status this may filter on in SQL is the one the overlay
+      // never changes — `SKIPPED` in, `SKIPPED` out. The due rule is applied
+      // below, on the derived value.
       status: { not: 'SKIPPED' },
       application: { status: { in: ['ACTIVE', 'ON_HOLD'] } },
-      interviewers: { some: {} },
+      // A round whose only seats are shadows owes nothing, so it is not a row
+      // this page should read at all.
+      interviewers: { some: { role: { not: 'SHADOW' } } },
     },
     orderBy: { createdAt: 'asc' },
+    take: limit,
     select: {
       id: true,
       name: true,
@@ -543,6 +784,7 @@ export async function listOutstandingFeedback(
       scheduledAt: true,
       completedAt: true,
       createdAt: true,
+      assignment: { select: { status: true } },
       application: {
         select: {
           id: true,
@@ -551,16 +793,22 @@ export async function listOutstandingFeedback(
         },
       },
       interviewers: {
-        select: { userId: true, user: { select: { name: true, email: true } } },
+        select: { userId: true, role: true, user: { select: { name: true, email: true } } },
       },
       feedback: { select: { authorId: true, status: true } },
     },
   });
 
   return stages
-    .map((stage) => {
+    .flatMap((stage) => {
+      const stageStatus = effectiveStageStatus(stage);
+      // Nobody is late for an interview that has not happened. The board says
+      // zero outstanding for these; this page used to list them with an age.
+      if (!isScorecardDue(stageStatus)) return [];
+
       const byAuthor = new Map(stage.feedback.map((row) => [row.authorId, row.status]));
       const owed: OutstandingOwner[] = stage.interviewers
+        .filter((seat) => isExpectedToScore(seat.role))
         .filter((seat) => byAuthor.get(seat.userId) !== 'SUBMITTED')
         .map((seat) => ({
           userId: seat.userId,
@@ -568,24 +816,27 @@ export async function listOutstandingFeedback(
           email: seat.user.email,
           status: byAuthor.get(seat.userId) === 'DRAFT' ? ('DRAFT' as const) : ('NONE' as const),
         }));
+      if (owed.length === 0) return [];
 
+      const counts = countScorecards(stage.interviewers, stage.feedback, stageStatus);
       const since = waitingSince(stage);
-      return {
-        stageId: stage.id,
-        stageName: stage.name,
-        stageType: stage.type,
-        stageStatus: stage.status,
-        applicationId: stage.application.id,
-        candidateName: stage.application.candidate.name,
-        jobRoleTitle: stage.application.jobRole?.title ?? null,
-        panelSize: stage.interviewers.length,
-        submittedCount: stage.feedback.filter((row) => row.status === 'SUBMITTED').length,
-        waitingSince: since,
-        ageDays: ageInDays(since, now),
-        owed,
-      };
+      return [
+        {
+          stageId: stage.id,
+          stageName: stage.name,
+          stageType: stage.type,
+          stageStatus,
+          applicationId: stage.application.id,
+          candidateName: stage.application.candidate.name,
+          jobRoleTitle: stage.application.jobRole?.title ?? null,
+          panelSize: counts.expected,
+          submittedCount: counts.submitted,
+          waitingSince: since,
+          ageDays: ageInDays(since, now),
+          owed,
+        },
+      ];
     })
-    .filter((row) => row.owed.length > 0)
     .sort((a, b) => a.waitingSince.getTime() - b.waitingSince.getTime());
 }
 

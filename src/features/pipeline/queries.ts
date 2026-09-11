@@ -12,8 +12,8 @@ import type {
   StageStatus,
   StageType,
 } from '@/generated/prisma/enums';
-import { canViewApplication, visibleApplicationsWhere } from './access';
-import { deriveCodingStageStatus, isStageResolved } from './stage-status';
+import { assertCanViewApplication, canViewApplication, visibleApplicationsWhere } from './access';
+import { countScorecards, deriveCodingStageStatus, isStageResolved } from './stage-status';
 
 /**
  * Read models for the hiring pipeline.
@@ -48,8 +48,10 @@ interface RawStage {
   scheduledAt: Date | null;
   updatedAt: Date;
   assignment: { status: AssignmentStatus } | null;
-  interviewers: Array<{ role: InterviewerRole }>;
-  feedback: Array<{ status: FeedbackStatus }>;
+  /** `userId` as well as `role`, because the scorecard count has to match a
+   *  submitted row to the seat that owed it — see `countScorecards`. */
+  interviewers: Array<{ userId: string; role: InterviewerRole }>;
+  feedback: Array<{ authorId: string; status: FeedbackStatus }>;
 }
 
 export interface StageSummary {
@@ -68,6 +70,8 @@ export interface StageSummary {
   /** Panellists who owe a scorecard. Shadows are excluded: a shadow is there
    *  to learn, and counting them would leave every stage looking overdue. */
   expectedScorecards: number;
+  /** Submitted scorecards from those same seats, so this can never exceed the
+   *  line above. See `countScorecards` for why both halves share one rule. */
   submittedScorecards: number;
   /** Only ever non-zero once the round has actually run. A scorecard for a
    *  stage that has not happened yet is not late, it is not due. */
@@ -81,9 +85,9 @@ function effectiveStatus(stage: RawStage): StageStatus {
 
 function summariseStage(stage: RawStage): StageSummary {
   const status = effectiveStatus(stage);
-  const expected = stage.interviewers.filter((i) => i.role !== 'SHADOW').length;
-  const submitted = stage.feedback.filter((f) => f.status === 'SUBMITTED').length;
-  const due = status === 'IN_PROGRESS' || status === 'AWAITING_FEEDBACK' || status === 'COMPLETE';
+  // Both numbers from one call. Computing them separately is what let the
+  // denominator exclude shadows while the numerator counted them.
+  const counts = countScorecards(stage.interviewers, stage.feedback, status);
   return {
     id: stage.id,
     name: stage.name,
@@ -94,9 +98,9 @@ function summariseStage(stage: RawStage): StageSummary {
     outcome: stage.outcome,
     scheduledAt: stage.scheduledAt,
     updatedAt: stage.updatedAt,
-    expectedScorecards: expected,
-    submittedScorecards: submitted,
-    outstandingScorecards: due ? Math.max(0, expected - submitted) : 0,
+    expectedScorecards: counts.expected,
+    submittedScorecards: counts.submitted,
+    outstandingScorecards: counts.outstanding,
   };
 }
 
@@ -159,9 +163,12 @@ const RAW_STAGE_SELECT = {
   scheduledAt: true,
   updatedAt: true,
   assignment: { select: { status: true } },
-  interviewers: { select: { role: true } },
-  // Status only. See the module comment: counting is allowed, reading is not.
-  feedback: { select: { status: true } },
+  interviewers: { select: { userId: true, role: true } },
+  // Status and author only — never the prose. See the module comment: counting
+  // is allowed, reading is not. `authorId` is here to *match* a row to the seat
+  // that owed it, and it does not leave this module: `StageSummary` carries
+  // numbers, not names.
+  feedback: { select: { authorId: true, status: true } },
 } as const;
 
 // --- the board --------------------------------------------------------------
@@ -392,7 +399,7 @@ export async function getApplication(
   const progress = summariseStages(
     row.stages.map((stage) => ({
       ...stage,
-      interviewers: stage.interviewers.map((seat) => ({ role: seat.role })),
+      interviewers: stage.interviewers.map((seat) => ({ userId: seat.userId, role: seat.role })),
     })),
   );
   const rawById = new Map(row.stages.map((stage) => [stage.id, stage]));
@@ -526,15 +533,21 @@ export interface TimelineEvent {
 /**
  * The application's history, newest first.
  *
- * Takes an id rather than a viewer: it is read straight after `getApplication`
- * has already established that this person may see the application, and every
- * event here is scoped to that one row by `AuditEvent.applicationId`. Do not
- * call it before that check.
+ * Takes the viewer and checks for itself. It used to take an id alone, on the
+ * grounds that its one caller reads it straight after `getApplication` has
+ * established access — but "guarded by the order of two lines on a page" is not
+ * a control, and what this returns is raw audit metadata: who was on which
+ * panel, which rubric version each round was pinned to, what a status moved
+ * from and to. A second caller, or a reordered `Promise.all`, would have handed
+ * all of it to an interviewer with no seat on the application.
  */
 export async function getApplicationTimeline(
+  viewer: SessionUser,
   applicationId: string,
   limit = 100,
 ): Promise<TimelineEvent[]> {
+  await assertCanViewApplication(viewer, applicationId);
+
   return prisma.auditEvent.findMany({
     where: { applicationId },
     orderBy: { createdAt: 'desc' },
@@ -590,24 +603,53 @@ export async function listPipelineFilterOptions(
   return { jobRoles, owners, statuses: statusRows.map((row) => row.status) };
 }
 
+export interface AssignableCandidate {
+  id: string;
+  name: string;
+  email: string;
+  /**
+   * The requisitions this candidate already has a live run for.
+   *
+   * `null` is a member of this list rather than an absence from it, exactly as
+   * in `assertNoCompetingActiveApplication`: two live runs with no requisition
+   * at all are the same ambiguity as two on the same one.
+   */
+  activeJobRoleIds: Array<string | null>;
+}
+
 /**
  * Who may be started on an application.
  *
  * "No active application" rather than "no application": a candidate who was
  * rejected last spring is a perfectly good person to approach about a
- * different role, and the pipeline is built to hold that second run. What it
- * refuses is two live runs at once — see `createApplicationAction`.
+ * different role, and the pipeline is built to hold that second run.
+ *
+ * The rule this picker has to agree with is per `(candidate, jobRole)` — see
+ * `assertNoCompetingActiveApplication`. It used to exclude anyone with *any*
+ * active application, which is a different and stricter rule: a candidate half
+ * way through Backend L4 simply vanished from the list when a recruiter went to
+ * start them on Platform L5, with the hint on the form ("only candidates with
+ * no active application are listed") explaining a restriction the server would
+ * not actually have applied. So every active candidate is returned, each
+ * carrying the roles they are already live on, and the form refuses only the
+ * pairing the action refuses.
  */
-export async function listAssignableCandidates(): Promise<
-  Array<{ id: string; name: string; email: string }>
-> {
-  return prisma.user.findMany({
-    where: {
-      role: 'CANDIDATE',
-      isActive: true,
-      NOT: { applications: { some: { status: 'ACTIVE' } } },
-    },
+export async function listAssignableCandidates(): Promise<AssignableCandidate[]> {
+  const rows = await prisma.user.findMany({
+    where: { role: 'CANDIDATE', isActive: true },
     orderBy: { name: 'asc' },
-    select: { id: true, name: true, email: true },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      applications: { where: { status: 'ACTIVE' }, select: { jobRoleId: true } },
+    },
   });
+
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    activeJobRoleIds: row.applications.map((application) => application.jobRoleId),
+  }));
 }

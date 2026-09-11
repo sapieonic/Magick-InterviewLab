@@ -12,10 +12,15 @@ import {
   moveStageTemplateAction,
   removeStageTemplateAction,
   updateJobRoleAction,
+  updatePipelineTemplateAction,
 } from '@/features/pipeline/templates';
 import { listPublishedRubrics } from '@/features/rubrics/queries';
-import { listStaff } from '@/features/staff/queries';
-import { createStaffAction, setUserRoleAction } from '@/features/staff/actions';
+import { listStaff, type StaffRow } from '@/features/staff/queries';
+import {
+  createStaffAction,
+  setStaffActiveAction,
+  setUserRoleAction,
+} from '@/features/staff/actions';
 import { PageHeader, Section } from '@/components/admin/page-header';
 import {
   ActiveBadge,
@@ -24,6 +29,7 @@ import {
   STAGE_TYPE_LABELS,
 } from '@/components/admin/badges';
 import { ActionForm, HiddenFields } from '@/components/admin/action-form';
+import { ConfirmAction } from '@/components/admin/confirm-action';
 import { SubmitButton } from '@/components/admin/form';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
@@ -44,9 +50,17 @@ const STAGE_TYPES = Object.keys(STAGE_TYPE_LABELS) as StageType[];
  *
  * Each section is gated on its own capability and simply is not rendered
  * otherwise — a recruiter opening this page sees nothing they cannot use
- * rather than a wall of disabled controls. The page itself only needs
- * `ACCESS_CONSOLE`, because a staff member with neither capability still gets
- * a coherent (if short) page rather than a redirect they cannot explain.
+ * rather than a wall of disabled controls.
+ *
+ * The page guard is deliberately the weaker one. Both sections here need a
+ * capability only an admin holds, so raising the page to match would be
+ * defensible — but nothing is *loaded* without the capability that reads it
+ * (every query above is behind its own `? :`), so the choice is purely about
+ * what a staff member who follows a stale link is told. A short page saying
+ * which is the case beats a silent bounce to `/admin` that looks like the link
+ * is broken. The nav already hides this link from anyone without
+ * `MANAGE_CONTENT`, so nobody arrives here by accident, and the empty state
+ * below is what the exception exists for rather than dead code.
  *
  * Every form here is a plain POST through `ActionForm`. There is no client
  * state to hold: these are small, low-frequency edits, and a toast on the way
@@ -204,16 +218,57 @@ export default async function SettingsPage() {
                 <ul className="mb-5 space-y-4">
                   {templates.map((template) => (
                     <li key={template.id} className="rounded-md border">
-                      <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2">
-                        <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
-                          {template.name}
-                        </span>
-                        <ActiveBadge isActive={template.isActive} />
-                        <span className="text-muted-foreground text-[12px] tabular-nums">
-                          {template.stages.length}{' '}
-                          {template.stages.length === 1 ? 'round' : 'rounds'}
-                        </span>
-                      </div>
+                      {/* Editable rather than a label: a template that cannot be
+                          renamed or retired is one that lives forever in every
+                          picker, and `listActiveTemplateOptions` filters on
+                          exactly the flag this checkbox writes. */}
+                      <ActionForm
+                        action={updatePipelineTemplateAction}
+                        success="Template updated."
+                        className="space-y-2 border-b px-3 py-2"
+                      >
+                        <input type="hidden" name="id" value={template.id} />
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Input
+                            name="name"
+                            defaultValue={template.name}
+                            aria-label={`Name of ${template.name}`}
+                            required
+                            className="h-8 min-w-40 flex-1 text-[13px]"
+                          />
+                          <ActiveBadge isActive={template.isActive} />
+                          <span className="text-muted-foreground text-[12px] tabular-nums">
+                            {template.stages.length}{' '}
+                            {template.stages.length === 1 ? 'round' : 'rounds'}
+                          </span>
+                        </div>
+                        <Input
+                          name="description"
+                          defaultValue={template.description}
+                          aria-label={`Description of ${template.name}`}
+                          placeholder="What this loop is for (optional)"
+                          className="h-8 text-[13px]"
+                        />
+                        <div className="flex flex-wrap items-center gap-3">
+                          <span className="flex items-center gap-2">
+                            <Checkbox
+                              id={`template-active-${template.id}`}
+                              name="isActive"
+                              value="true"
+                              defaultChecked={template.isActive}
+                            />
+                            <Label
+                              htmlFor={`template-active-${template.id}`}
+                              className="cursor-pointer text-[12px] font-normal"
+                            >
+                              Offered for new applications
+                            </Label>
+                          </span>
+                          <SubmitButton size="xs" variant="outline" className="ml-auto">
+                            Save
+                          </SubmitButton>
+                        </div>
+                      </ActionForm>
 
                       <ol className="divide-border divide-y">
                         {template.stages.map((stage, index) => (
@@ -368,6 +423,7 @@ export default async function SettingsPage() {
                     <th className="py-1.5 pr-3 font-medium">Role</th>
                     <th className="py-1.5 pr-3 font-medium">Owns</th>
                     <th className="py-1.5 pr-3 font-medium">Last login</th>
+                    <th className="py-1.5 pr-3 font-medium">Account</th>
                     <th className="py-1.5 font-medium">Change role</th>
                   </tr>
                 </thead>
@@ -390,6 +446,17 @@ export default async function SettingsPage() {
                       </td>
                       <td className="text-muted-foreground py-2 pr-3 whitespace-nowrap">
                         {formatDate(person.lastLoginAt)}
+                      </td>
+                      <td className="py-2 pr-3">
+                        <span className="flex flex-wrap items-center gap-1.5">
+                          <ActiveBadge isActive={person.isActive} />
+                          {person.mustChangePassword ? (
+                            <span className="text-muted-foreground text-[12px]">
+                              Temporary password
+                            </span>
+                          ) : null}
+                          {person.id === viewer.id ? null : <StaffStatusControl person={person} />}
+                        </span>
                       </td>
                       <td className="py-2">
                         {person.id === viewer.id ? (
@@ -481,5 +548,57 @@ export default async function SettingsPage() {
         ) : null}
       </div>
     </>
+  );
+}
+
+/**
+ * Deactivate or reactivate a colleague's account.
+ *
+ * The staff half of the flow candidates have had all along: `listStaff` reports
+ * what each person owns precisely so an admin can see what a deactivation would
+ * strand before doing it. Never rendered for your own row — `setStaffActiveAction`
+ * refuses that anyway, for the same lockout reason as a self-demotion.
+ */
+function StaffStatusControl({ person }: { person: StaffRow }) {
+  if (!person.isActive) {
+    return (
+      <ActionForm action={setStaffActiveAction} success="Account reactivated.">
+        <HiddenFields fields={{ id: person.id, isActive: 'true' }} />
+        <SubmitButton size="xs" variant="outline">
+          Reactivate
+        </SubmitButton>
+      </ActionForm>
+    );
+  }
+
+  return (
+    <ConfirmAction
+      action={setStaffActiveAction}
+      fields={{ id: person.id, isActive: 'false' }}
+      title={`Deactivate ${person.name}?`}
+      description={
+        <>
+          <p>
+            They are signed out immediately and cannot sign in again until someone reactivates them.
+          </p>
+          <p>
+            {person.ownedApplicationCount === 0
+              ? 'They own no applications.'
+              : `They still own ${person.ownedApplicationCount} application${
+                  person.ownedApplicationCount === 1 ? '' : 's'
+                } — reassign the owner first, or nobody is accountable for moving them along.`}{' '}
+            {person.panelSeatCount === 0
+              ? 'They sit on no panels.'
+              : `They sit on ${person.panelSeatCount} panel${
+                  person.panelSeatCount === 1 ? '' : 's'
+                }, and a seat nobody can sign in to fill is a scorecard that never arrives.`}
+          </p>
+        </>
+      }
+      confirmLabel="Deactivate"
+      triggerLabel="Deactivate"
+      triggerSize="xs"
+      success="Account deactivated and signed out."
+    />
   );
 }

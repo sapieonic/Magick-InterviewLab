@@ -32,6 +32,13 @@ export interface OptionRow {
   email?: string;
 }
 
+export interface CandidateOption extends OptionRow {
+  /** The requisitions this candidate already has a live run for, `null` being
+   *  "an application with no job role" — which the one-active-application rule
+   *  treats as a value, not as an absence. */
+  activeJobRoleIds: Array<string | null>;
+}
+
 export interface JobRoleOption {
   id: string;
   title: string;
@@ -55,12 +62,17 @@ export function ApplicationCreateForm({
   templates,
   owners,
 }: {
-  candidates: OptionRow[];
+  candidates: CandidateOption[];
   jobRoles: JobRoleOption[];
   templates: TemplateOption[];
   owners: OptionRow[];
 }) {
   const [state, setState] = useState<ActionResult<undefined> | null>(null);
+  // The job role is held in state because two other fields follow it: the
+  // pipeline it defaults to, and which candidates may be started on it.
+  const [jobRoleId, setJobRoleId] = useState('');
+  const [templateId, setTemplateId] = useState('');
+  const [candidateId, setCandidateId] = useState('');
 
   async function submit(formData: FormData): Promise<void> {
     // On success the action redirects, so this only ever runs on failure.
@@ -69,10 +81,39 @@ export function ApplicationCreateForm({
 
   const fieldErrors = state && !state.ok ? state.fieldErrors : undefined;
 
+  /**
+   * Choosing a requisition fills in its pipeline.
+   *
+   * The default was plumbed all the way here — `listActiveJobRoleOptions`
+   * selects `pipelineTemplateId` for no other purpose — and then dropped, so
+   * "the pipeline set here becomes the default for new applications" was true
+   * of nothing. It is a default, not a constraint: the select stays editable,
+   * and a role whose default template has since been deactivated falls back to
+   * "no rounds" rather than to an option that is not in the list.
+   */
+  function chooseJobRole(nextId: string): void {
+    setJobRoleId(nextId);
+    const fallback = jobRoles.find((role) => role.id === nextId)?.pipelineTemplateId ?? '';
+    setTemplateId(templates.some((template) => template.id === fallback) ? fallback : '');
+  }
+
+  // The rule the action enforces is one live application per candidate *per
+  // role* — so that, and not "per candidate", is what the picker applies. A
+  // candidate half way through Backend L4 is a perfectly good candidate for
+  // Platform L5, and used to simply vanish from this list.
+  const clashesWith: string | null = jobRoleId === '' ? null : jobRoleId;
+  const available = candidates.filter(
+    (candidate) => !candidate.activeJobRoleIds.includes(clashesWith),
+  );
+  // Derived rather than reset in an effect: changing the role can disqualify
+  // whoever was chosen, and a stale id in a hidden field would be refused by
+  // the server with an error the recruiter cannot see the cause of.
+  const chosen = available.some((candidate) => candidate.id === candidateId) ? candidateId : '';
+
   if (candidates.length === 0) {
     return (
       <p className="text-muted-foreground text-[13px]">
-        Every candidate already has an application in flight. Close one, or add a candidate first.
+        No active candidates yet. Add one first — an application needs somebody to be about.
       </p>
     );
   }
@@ -85,13 +126,21 @@ export function ApplicationCreateForm({
         id="candidateId"
         label="Candidate"
         errors={fieldErrors?.candidateId}
-        hint="Only candidates with no active application are listed."
+        hint="A candidate can only have one live application per job role."
       >
-        <Select id="candidateId" name="candidateId" required defaultValue="">
+        <Select
+          id="candidateId"
+          name="candidateId"
+          required
+          value={chosen}
+          onChange={(event) => setCandidateId(event.target.value)}
+        >
           <option value="" disabled>
-            Choose a candidate…
+            {available.length === 0
+              ? 'Every candidate already has a live application for this role…'
+              : 'Choose a candidate…'}
           </option>
-          {candidates.map((candidate) => (
+          {available.map((candidate) => (
             <option key={candidate.id} value={candidate.id}>
               {candidate.name}
               {candidate.email ? ` · ${candidate.email}` : ''}
@@ -102,7 +151,12 @@ export function ApplicationCreateForm({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Field id="jobRoleId" label="Job role" errors={fieldErrors?.jobRoleId}>
-          <Select id="jobRoleId" name="jobRoleId" defaultValue="">
+          <Select
+            id="jobRoleId"
+            name="jobRoleId"
+            value={jobRoleId}
+            onChange={(event) => chooseJobRole(event.target.value)}
+          >
             <option value="">No role — one-off assessment</option>
             {jobRoles.map((role) => (
               <option key={role.id} value={role.id}>
@@ -116,9 +170,14 @@ export function ApplicationCreateForm({
           id="pipelineTemplateId"
           label="Pipeline"
           errors={fieldErrors?.pipelineTemplateId}
-          hint="Applied straight away. The rounds can still be edited afterwards."
+          hint="Defaults to the job role's pipeline. Applied straight away; the rounds can still be edited afterwards."
         >
-          <Select id="pipelineTemplateId" name="pipelineTemplateId" defaultValue="">
+          <Select
+            id="pipelineTemplateId"
+            name="pipelineTemplateId"
+            value={templateId}
+            onChange={(event) => setTemplateId(event.target.value)}
+          >
             <option value="">Start with no rounds</option>
             {templates.map((template) => (
               <option key={template.id} value={template.id}>
@@ -152,7 +211,7 @@ export function ApplicationCreateForm({
         </Field>
       </div>
 
-      <SubmitButton>Start application</SubmitButton>
+      <SubmitButton disabled={available.length === 0}>Start application</SubmitButton>
     </form>
   );
 }

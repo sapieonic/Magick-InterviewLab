@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ClipboardList, FileCode2 } from 'lucide-react';
 import { requireStaffPage } from '@/features/auth/guards';
+import { can } from '@/features/auth/capabilities';
 import { getStageForFeedback } from '@/features/feedback/queries';
 import { PageHeader, Section } from '@/components/admin/page-header';
 import {
@@ -37,6 +38,12 @@ export default async function StagePage({ params }: PageProps) {
   if (!view) notFound();
 
   const { stage, application, rubric, own, others, hidden, panel, progress, submissions } = view;
+  // Both of these links go somewhere the viewer may not be. The debrief is
+  // gated on `VIEW_ALL_APPLICATIONS` and the candidate record on
+  // `MANAGE_USERS`; offering either to someone who would be bounced straight
+  // back to /admin is a dead end on an interviewer's ordinary path.
+  const canOpenDebrief = can(viewer.role, 'VIEW_ALL_APPLICATIONS');
+  const canOpenCandidate = can(viewer.role, 'MANAGE_USERS');
 
   return (
     <>
@@ -46,12 +53,16 @@ export default async function StagePage({ params }: PageProps) {
         backLabel="Application"
         description={
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <Link
-              href={`/admin/candidates/${application.candidateId}`}
-              className="hover:text-primary font-medium transition-colors"
-            >
-              {application.candidateName}
-            </Link>
+            {canOpenCandidate ? (
+              <Link
+                href={`/admin/candidates/${application.candidateId}`}
+                className="hover:text-primary font-medium transition-colors"
+              >
+                {application.candidateName}
+              </Link>
+            ) : (
+              <span className="font-medium">{application.candidateName}</span>
+            )}
             {application.jobRoleTitle ? <span>{application.jobRoleTitle}</span> : null}
             <StageTypeBadge type={stage.type} />
             <StageStatusBadge status={stage.status} />
@@ -60,9 +71,11 @@ export default async function StagePage({ params }: PageProps) {
           </span>
         }
         actions={
-          <Button asChild size="sm" variant="outline">
-            <Link href={`/admin/applications/${application.id}/scorecard`}>Debrief</Link>
-          </Button>
+          canOpenDebrief ? (
+            <Button asChild size="sm" variant="outline">
+              <Link href={`/admin/applications/${application.id}/scorecard`}>Debrief</Link>
+            </Button>
+          ) : undefined
         }
       />
 

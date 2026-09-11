@@ -167,9 +167,9 @@ export function RubricProfileForm({ rubric }: { rubric: RubricProfileValues }) {
           className="mt-0.5"
         />
         <div className="space-y-0.5">
-          <Label htmlFor="rubric-active">Available for new stages</Label>
+          <Label htmlFor="rubric-active">Available for new rounds</Label>
           <p className="text-muted-foreground text-[12px]">
-            Turning this off hides the rubric from the pickers. Stages already pinned to one of its
+            Turning this off hides the rubric from the pickers. Rounds already pinned to one of its
             versions keep it.
           </p>
         </div>

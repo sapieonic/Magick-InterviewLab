@@ -207,6 +207,65 @@ describe('one active application per candidate and role', () => {
   });
 });
 
+/**
+ * The application and its rounds are one write.
+ *
+ * `materialiseTemplate` refuses an empty template or an unpublished rubric, and
+ * before this was a transaction the `Application` row had already committed by
+ * then: the recruiter saw a rubric error, no detail page, and — after fixing
+ * the rubric — a one-active-application clash against a row they could not see.
+ */
+describe('createApplicationAction is atomic with the template', () => {
+  beforeEach(() => {
+    h.db.user.findFirst.mockResolvedValue({ id: 'cand-1' });
+    h.db.application.findFirst.mockResolvedValue(null);
+    h.db.application.create.mockResolvedValue({ id: 'app-new' });
+  });
+
+  it('writes the application, its audit line and its rounds in one transaction', async () => {
+    h.db.pipelineTemplate.findUnique.mockResolvedValue({
+      id: 'tpl-1',
+      name: 'Backend loop',
+      stages: [
+        { id: 'st-1', name: 'Screen', type: 'LIVE_CODING', rubricId: null },
+        { id: 'st-2', name: 'Design', type: 'SYSTEM_DESIGN', rubricId: null },
+      ],
+    });
+
+    await expect(
+      createApplicationAction(null, form({ candidateId: 'cand-1', pipelineTemplateId: 'tpl-1' })),
+    ).rejects.toThrow(/NEXT_REDIRECT/);
+
+    expect(h.db.$transaction).toHaveBeenCalledTimes(1);
+    expect(h.db.stage.create).toHaveBeenCalledTimes(2);
+    expect(auditActions()).toEqual(['application.created', 'stage.created']);
+  });
+
+  it('fails the whole write when the template cannot be materialised', async () => {
+    // The shape that used to strand a row: an empty template.
+    h.db.pipelineTemplate.findUnique.mockResolvedValue({
+      id: 'tpl-1',
+      name: 'Backend loop',
+      stages: [],
+    });
+
+    const result = failed(
+      await createApplicationAction(
+        null,
+        form({ candidateId: 'cand-1', pipelineTemplateId: 'tpl-1' }),
+      ),
+    );
+
+    expect(result.error).toMatch(/no stages to apply/i);
+    expect(h.db.stage.create).not.toHaveBeenCalled();
+    // The application insert happened inside the transaction the throw rolls
+    // back, and the recruiter was not redirected away from the form.
+    expect(h.redirect).not.toHaveBeenCalled();
+    const transactional = h.db.$transaction.mock.calls[0]?.[0];
+    expect(typeof transactional).toBe('function');
+  });
+});
+
 describe('createStageAction', () => {
   beforeEach(() => {
     h.db.application.findUnique.mockResolvedValue({
@@ -238,7 +297,8 @@ describe('createStageAction', () => {
     expect(h.db.interviewAssignment.create).not.toHaveBeenCalled();
   });
 
-  it('appends at the next free position', async () => {
+  it('appends at the next free position, counted inside the transaction', async () => {
+    h.db.stage.count.mockResolvedValue(2);
     h.db.stage.create.mockResolvedValue({ id: 'stage-3' });
 
     succeeded(
@@ -250,6 +310,35 @@ describe('createStageAction', () => {
 
     const created = h.db.stage.create.mock.calls[0]?.[0] as { data: { position: number } };
     expect(created.data.position).toBe(2);
+    expect(auditActions()).toContain('stage.created');
+  });
+
+  /**
+   * Two "Add round" clicks a moment apart both used to read the application's
+   * `_count.stages` before either wrote, so both wrote position 3. The count
+   * now happens inside the transaction, behind the application's row lock.
+   */
+  it('takes the application row lock and counts under it, not before', async () => {
+    h.db.stage.count.mockResolvedValue(2);
+    h.db.stage.create.mockResolvedValue({ id: 'stage-3' });
+
+    succeeded(
+      await createStageAction(
+        null,
+        form({ applicationId: 'app-1', name: 'Systems chat', type: 'SYSTEM_DESIGN' }),
+      ),
+    );
+
+    expect(h.db.$transaction).toHaveBeenCalledTimes(1);
+    expect(h.db.$queryRaw).toHaveBeenCalledTimes(1);
+    // Nothing about the position is read from the row loaded before the
+    // transaction — the select no longer even asks for it.
+    const loaded = h.db.application.findUnique.mock.calls[0]?.[0] as {
+      select: Record<string, unknown>;
+    };
+    expect(loaded.select['_count']).toBeUndefined();
+    expect(h.db.stage.count).toHaveBeenCalledWith({ where: { applicationId: 'app-1' } });
+    // The audit line is written with the same client as the insert.
     expect(auditActions()).toContain('stage.created');
   });
 
@@ -307,12 +396,33 @@ describe('deleteStageAction', () => {
     expect(auditActions()).toContain('stage.deleted');
   });
 
+  it('refuses to delete a round that has only an unfinished draft on it', async () => {
+    h.db.stage.findUnique.mockResolvedValue({
+      id: 'stage-2',
+      name: 'Technical screen',
+      applicationId: 'app-1',
+      feedback: [{ id: 'fb-1', status: 'DRAFT' }],
+    });
+
+    const result = failed(await deleteStageAction(null, form({ id: 'stage-2' })));
+
+    // `Feedback` cascades from `Stage`: nobody else can even read a colleague's
+    // draft, and deleting the round is the one way to destroy it.
+    expect(result.error).toMatch(/cannot be removed/i);
+    expect(result.error).toMatch(/draft/i);
+    expect(result.error).toMatch(/skip it/i);
+    expect(h.db.stage.delete).not.toHaveBeenCalled();
+  });
+
   it('refuses to delete a round that has submitted feedback', async () => {
     h.db.stage.findUnique.mockResolvedValue({
       id: 'stage-2',
       name: 'Technical screen',
       applicationId: 'app-1',
-      feedback: [{ id: 'fb-1' }, { id: 'fb-2' }],
+      feedback: [
+        { id: 'fb-1', status: 'SUBMITTED' },
+        { id: 'fb-2', status: 'SUBMITTED' },
+      ],
     });
 
     const result = failed(await deleteStageAction(null, form({ id: 'stage-2' })));
@@ -404,6 +514,67 @@ describe('setStageStatusAction', () => {
     expect(h.db.stage.update).not.toHaveBeenCalled();
   });
 
+  /**
+   * The reopen the docs promise and the action refused. `CODING_STAGE_MANUAL_STATUSES`
+   * is ['COMPLETE','SKIPPED'] and the only exit `STAGE_TRANSITIONS` gives
+   * `COMPLETE` is `AWAITING_FEEDBACK` — so asking the coding guard about the
+   * target alone made a completed coding round permanent.
+   */
+  it('reopens a completed coding round', async () => {
+    h.db.stage.findUnique.mockResolvedValue(
+      stageRow({
+        type: 'CODING_ASSESSMENT',
+        status: 'COMPLETE',
+        assignment: { status: 'COMPLETED' },
+      }),
+    );
+
+    succeeded(
+      await setStageStatusAction(null, form({ id: 'stage-2', status: 'AWAITING_FEEDBACK' })),
+    );
+
+    const update = h.db.stage.update.mock.calls[0]?.[0] as {
+      data: { status: string; completedAt: Date | null | undefined };
+    };
+    expect(update.data.status).toBe('AWAITING_FEEDBACK');
+    expect(update.data.completedAt).toBeNull();
+    expect(auditActions()).toContain('stage.status_changed');
+  });
+
+  it('un-skips a skipped coding round', async () => {
+    h.db.stage.findUnique.mockResolvedValue(
+      stageRow({
+        type: 'CODING_ASSESSMENT',
+        status: 'SKIPPED',
+        assignment: { status: 'ASSIGNED' },
+      }),
+    );
+
+    succeeded(await setStageStatusAction(null, form({ id: 'stage-2', status: 'PENDING' })));
+
+    // Back under the assignment's control: `deriveCodingStageStatus` reads the
+    // stored PENDING through the assignment again from here.
+    const update = h.db.stage.update.mock.calls[0]?.[0] as { data: { status: string } };
+    expect(update.data.status).toBe('PENDING');
+  });
+
+  it('still refuses a hand-set status that is not a way out of a terminal one', async () => {
+    h.db.stage.findUnique.mockResolvedValue(
+      stageRow({
+        type: 'CODING_ASSESSMENT',
+        status: 'AWAITING_FEEDBACK',
+        assignment: { status: 'COMPLETED' },
+      }),
+    );
+
+    const result = failed(
+      await setStageStatusAction(null, form({ id: 'stage-2', status: 'IN_PROGRESS' })),
+    );
+
+    expect(result.error).toMatch(/follows the assessment/i);
+    expect(h.db.stage.update).not.toHaveBeenCalled();
+  });
+
   it('still lets a person complete a coding round by hand', async () => {
     h.db.stage.findUnique.mockResolvedValue(
       stageRow({
@@ -481,6 +652,58 @@ describe('panel membership', () => {
 
     expect(h.db.stageInterviewer.delete).toHaveBeenCalledWith({ where: { id: 'seat-1' } });
     expect(auditActions()).toContain('panel.removed');
+  });
+
+  /**
+   * The escape hatch out of blind feedback. The "already submitted" guard below
+   * cannot fire against the person abusing this: a blinded panellist has not
+   * submitted, by definition. They vacate their own seat, stop being a
+   * panellist, read the panel's scorecards on `VIEW_ALL_APPLICATIONS`, re-seat
+   * themselves and write an anchored one.
+   */
+  it('refuses to let anyone take themselves off a panel', async () => {
+    const result = failed(
+      await removePanelistAction(null, form({ stageId: 'stage-2', userId: 'recruiter-1' })),
+    );
+
+    expect(result.error).toMatch(/cannot take yourself off/i);
+    expect(result.error).toMatch(/someone else/i);
+    expect(h.db.stageInterviewer.delete).not.toHaveBeenCalled();
+    // Refused before anything is read: the answer does not depend on the row,
+    // and "have they submitted yet" is the wrong question to ask about it.
+    expect(h.db.stage.findUnique).not.toHaveBeenCalled();
+    expect(h.db.feedback.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('refuses self-removal for an admin too', async () => {
+    h.getCurrentUser.mockResolvedValue(actor({ id: 'admin-9', role: 'ADMIN' }));
+
+    const result = failed(
+      await removePanelistAction(null, form({ stageId: 'stage-2', userId: 'admin-9' })),
+    );
+
+    // Rank is no defence: an admin on a blind panel anchors exactly like
+    // anyone else, which is the premise of the rule.
+    expect(result.error).toMatch(/cannot take yourself off/i);
+    expect(h.db.stageInterviewer.delete).not.toHaveBeenCalled();
+  });
+
+  it('writes the seat and its audit line in one transaction', async () => {
+    h.db.stage.findUnique.mockResolvedValue(stageRow());
+    h.db.user.findUnique.mockResolvedValue({
+      id: 'user-9',
+      name: 'Lena Fischer',
+      role: 'INTERVIEWER',
+      isActive: true,
+    });
+    h.db.stageInterviewer.findUnique.mockResolvedValue(null);
+
+    succeeded(await addPanelistAction(null, form({ stageId: 'stage-2', userId: 'user-9' })));
+
+    // A seat grants the authority to write a scorecard; the record of who
+    // granted it must not be able to go missing on its own.
+    expect(h.db.$transaction).toHaveBeenCalledTimes(1);
+    expect(auditActions()).toEqual(['panel.added']);
   });
 
   it('refuses to seat a candidate on a panel', async () => {

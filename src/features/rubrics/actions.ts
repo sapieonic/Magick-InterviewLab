@@ -36,6 +36,18 @@ const updateRubricSchema = rubricInputSchema.extend({
   isActive: z.boolean(),
 });
 
+/**
+ * A unique-constraint violation, recognised without importing Prisma's error
+ * class (which drags the client's runtime into a module that only needs a
+ * string). `actionGuard` renders any P2002 it is handed as "That value is
+ * already taken", which means nothing to someone who never typed a value —
+ * so the one place here that can lose that race says what happened itself.
+ */
+function isUniqueViolation(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null || !('code' in error)) return false;
+  return (error as { code: unknown }).code === 'P2002';
+}
+
 function revalidateRubric(id?: string): void {
   revalidatePath('/admin');
   revalidatePath('/admin/rubrics');
@@ -171,6 +183,25 @@ export async function saveRubricVersionAction(
     const ownedIds = new Set(version.criteria.map((criterion) => criterion.id));
 
     const criterionIds = await prisma.$transaction(async (tx) => {
+      // The check above is a read, and a read holds nothing still. Author B can
+      // publish this version between A's read and this transaction, and A would
+      // then rewrite and delete the criteria of a frozen version — silently
+      // re-weighting every stage pinned to it, and taking with it every score
+      // already entered, because `feedback_scores_criterionId_fkey` is ON
+      // DELETE CASCADE. So the guard is folded into the first *write*: the
+      // notes update this save owes anyway matches nothing if the version was
+      // published meanwhile, which refuses the save atomically, and it takes
+      // the row lock a concurrent publish then has to wait behind.
+      const { count } = await tx.rubricVersion.updateMany({
+        where: { id: version.id, isPublished: false },
+        data: { notes: input.notes },
+      });
+      if (count === 0) {
+        throw new AppError(
+          `Version ${version.version} was published while you were editing, so it can no longer be changed. Open a new draft version to carry your changes forward.`,
+        );
+      }
+
       const keptIds = new Set<string>();
       const savedIds: string[] = [];
 
@@ -207,8 +238,6 @@ export async function saveRubricVersionAction(
       if (removed.length > 0) {
         await tx.rubricCriterion.deleteMany({ where: { id: { in: removed } } });
       }
-
-      await tx.rubricVersion.update({ where: { id: version.id }, data: { notes: input.notes } });
 
       return savedIds;
     });
@@ -324,27 +353,42 @@ export async function createRubricVersionAction(
     const latest = rubric.versions[0];
     const nextVersion = (latest?.version ?? 0) + 1;
 
-    await prisma.$transaction(async (tx) => {
-      const created = await tx.rubricVersion.create({
-        data: { rubricId, version: nextVersion, createdById: actor.id },
-        select: { id: true },
-      });
-
-      if (latest && latest.criteria.length > 0) {
-        // New rows, not a re-parent: these are a starting point for the draft,
-        // and the originals stay attached to the version that was published.
-        await tx.rubricCriterion.createMany({
-          data: latest.criteria.map((criterion, position) => ({
-            rubricVersionId: created.id,
-            name: criterion.name,
-            description: criterion.description,
-            weight: criterion.weight,
-            maxScore: criterion.maxScore,
-            position,
-          })),
+    try {
+      await prisma.$transaction(async (tx) => {
+        const created = await tx.rubricVersion.create({
+          data: { rubricId, version: nextVersion, createdById: actor.id },
+          select: { id: true },
         });
+
+        if (latest && latest.criteria.length > 0) {
+          // New rows, not a re-parent: these are a starting point for the draft,
+          // and the originals stay attached to the version that was published.
+          await tx.rubricCriterion.createMany({
+            data: latest.criteria.map((criterion, position) => ({
+              rubricVersionId: created.id,
+              name: criterion.name,
+              description: criterion.description,
+              weight: criterion.weight,
+              maxScore: criterion.maxScore,
+              position,
+            })),
+          });
+        }
+      });
+    } catch (error) {
+      // `nextVersion` came from a read, so two authors opening a draft at the
+      // same moment both compute the same number and the loser violates
+      // `rubric_versions_rubricId_version_key` — the only unique index this
+      // transaction can reach. Deliberately not retried at N+2: the winner's
+      // row *is* the one open draft this rubric is allowed, so a retry would
+      // create exactly the second draft the guard above exists to refuse.
+      if (isUniqueViolation(error)) {
+        throw new AppError(
+          `Someone else opened version ${nextVersion} while you were starting it. Reload to pick up their draft.`,
+        );
       }
-    });
+      throw error;
+    }
 
     revalidateRubric(rubricId);
     return ok();
@@ -368,6 +412,37 @@ export async function archiveRubricAction(
     // `FeedbackScore.criterion` every score ever entered against them. The
     // scorecards would survive as prose with their numbers gone.
     await prisma.rubric.update({ where: { id }, data: { isActive: false } });
+
+    revalidateRubric(id);
+    return ok();
+  });
+}
+
+/**
+ * Put an archived rubric back in the pickers.
+ *
+ * Archiving is a filing decision, not a destructive one — no version, criterion
+ * or score changes either way — so it has to be undoable from the same place it
+ * was made, by whoever has just realised they archived the wrong row. The
+ * `isActive` checkbox on the profile form can technically do this, but it is in
+ * the sidebar under two other fields, which is not where anybody looks after
+ * pressing "Archive".
+ *
+ * Nothing is republished by this: a version that was a draft before archiving
+ * is still a draft, and one that was frozen is still frozen.
+ */
+export async function unarchiveRubricAction(
+  _prev: ActionResult<undefined> | null,
+  formData: FormData,
+): Promise<ActionResult<undefined>> {
+  return actionGuard(async () => {
+    await requireCapability('MANAGE_CONTENT');
+    const id = cuidSchema.parse(formData.get('id'));
+
+    const existing = await prisma.rubric.findUnique({ where: { id }, select: { id: true } });
+    if (!existing) throw new NotFoundError('Rubric');
+
+    await prisma.rubric.update({ where: { id }, data: { isActive: true } });
 
     revalidateRubric(id);
     return ok();

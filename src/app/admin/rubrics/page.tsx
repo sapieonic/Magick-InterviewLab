@@ -91,7 +91,7 @@ export default async function RubricsPage() {
                         {rubric.stageUsageCount === 0 ? (
                           <span className="text-muted-foreground">&mdash;</span>
                         ) : (
-                          `${rubric.stageUsageCount} ${rubric.stageUsageCount === 1 ? 'stage' : 'stages'}`
+                          `${rubric.stageUsageCount} ${rubric.stageUsageCount === 1 ? 'round' : 'rounds'}`
                         )}
                       </TableCell>
                       <TableCell className="text-muted-foreground text-[13px] whitespace-nowrap">

@@ -26,9 +26,9 @@ import {
 import { applyTemplateSchema, linkStageAssignmentSchema, reorderStagesSchema } from './schemas';
 import { assertCanViewApplication } from './access';
 import {
+  canSetCodingStageStatusByHand,
   canTransitionStageStatus,
   deriveCodingStageStatus,
-  isManualStatusAllowedOnCodingStage,
   stageTransitionError,
 } from './stage-status';
 import type {
@@ -37,6 +37,7 @@ import type {
   StageStatus,
   StageType,
 } from '@/generated/prisma/enums';
+import type { Prisma } from '@/generated/prisma/client';
 
 /**
  * The application lifecycle: everything that moves one candidate through one
@@ -53,11 +54,39 @@ import type {
  *     from whatever the rows happen to say today.
  *  3. **`Stage.position` is contiguous from zero.** Inserts append, deletes
  *     renumber, reorders rewrite the whole list. A gap is harmless until
- *     something counts, and the stage list counts.
+ *     something counts, and the stage list counts. Every write that touches a
+ *     position does so inside a transaction, behind the application's row lock
+ *     — see `lockApplicationForPositions`, and note that "count the rounds,
+ *     then write that number" is only true of the count if nothing else can
+ *     insert in between.
  */
 
 const ACTIVE_CLASH =
   'That candidate already has an active application for this role. Close it before starting another.';
+
+/** The client half of an interactive transaction. */
+type Tx = Prisma.TransactionClient;
+
+/**
+ * Take the application's row lock before assigning `Stage.position`.
+ *
+ * Position is read-then-written — "the next free slot is however many rounds
+ * there are" — and two recruiters clicking "Add round" at the same moment both
+ * read 3 and both write 3. Locking the parent row serialises them: the second
+ * transaction blocks here until the first commits, then counts 4. A create
+ * racing a delete is the same story from the other side, and the delete
+ * renumbers under the same lock.
+ *
+ * `SELECT … FOR UPDATE` on the application rather than a unique index on
+ * `(applicationId, position)` because the index alone would only turn the race
+ * into a P2002 the recruiter has to read and retry — and because renumbering
+ * after a delete transiently duplicates positions, which a deferrable
+ * constraint tolerates only inside a transaction. Which is where every write
+ * that touches `position` now happens.
+ */
+async function lockApplicationForPositions(tx: Tx, applicationId: string): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM applications WHERE id = ${applicationId} FOR UPDATE`;
+}
 
 function revalidateApplication(id?: string): void {
   revalidatePath('/admin');
@@ -250,32 +279,45 @@ export async function createApplicationAction(
 
     await assertNoCompetingActiveApplication(input.candidateId, input.jobRoleId);
 
-    const application = await prisma.application.create({
-      data: {
-        candidateId: input.candidateId,
-        jobRoleId: input.jobRoleId,
-        ownerId: input.ownerId,
-        source: input.source,
-        // Recorded on the application even before the stages exist: it is what
-        // the process was *meant* to be, and a later template change must not
-        // rewrite what this candidate actually sat.
-        pipelineTemplateId: input.pipelineTemplateId,
-      },
-      select: { id: true },
-    });
+    // The application and its rounds are written together, as `createRubricAction`
+    // writes a rubric with its first draft. `materialiseTemplate` throws on an
+    // empty template or an unpublished rubric, and outside a transaction that
+    // left a committed `Application` the recruiter never saw: no redirect, no
+    // detail page, and — once they had fixed the rubric and retried — a
+    // one-active-application clash against a row they had no way to find.
+    const application = await prisma.$transaction(async (tx) => {
+      const created = await tx.application.create({
+        data: {
+          candidateId: input.candidateId,
+          jobRoleId: input.jobRoleId,
+          ownerId: input.ownerId,
+          source: input.source,
+          // Recorded on the application even before the stages exist: it is what
+          // the process was *meant* to be, and a later template change must not
+          // rewrite what this candidate actually sat.
+          pipelineTemplateId: input.pipelineTemplateId,
+        },
+        select: { id: true },
+      });
 
-    await record({
-      actorId: viewer.id,
-      action: AUDIT.APPLICATION_CREATED,
-      entityType: 'Application',
-      entityId: application.id,
-      applicationId: application.id,
-      metadata: { jobRoleId: input.jobRoleId, source: input.source },
-    });
+      await record(
+        {
+          actorId: viewer.id,
+          action: AUDIT.APPLICATION_CREATED,
+          entityType: 'Application',
+          entityId: created.id,
+          applicationId: created.id,
+          metadata: { jobRoleId: input.jobRoleId, source: input.source },
+        },
+        tx,
+      );
 
-    if (input.pipelineTemplateId) {
-      await materialiseTemplate(application.id, input.pipelineTemplateId, viewer.id);
-    }
+      if (input.pipelineTemplateId) {
+        await materialiseTemplate(tx, created.id, input.pipelineTemplateId, viewer.id);
+      }
+
+      return created;
+    });
 
     revalidateApplication(application.id);
     revalidatePath(`/admin/candidates/${input.candidateId}`);
@@ -442,11 +484,12 @@ export async function addApplicationCommentAction(
  * already wrote.
  */
 async function materialiseTemplate(
+  tx: Tx,
   applicationId: string,
   templateId: string,
   actorId: string,
 ): Promise<number> {
-  const template = await prisma.pipelineTemplate.findUnique({
+  const template = await tx.pipelineTemplate.findUnique({
     where: { id: templateId },
     select: {
       id: true,
@@ -471,36 +514,40 @@ async function materialiseTemplate(
     })),
   );
 
-  await prisma.$transaction(
-    pinned.map(({ stage, rubricVersionId }, index) =>
-      prisma.stage.create({
-        data: {
-          applicationId,
-          name: stage.name,
-          type: stage.type,
-          position: index,
-          rubricVersionId,
-        },
-      }),
-    ),
-  );
+  // Sequential rather than `$transaction([...])`: the caller already holds the
+  // transaction (and the application's row lock), and positions 0..n-1 are only
+  // contiguous because nothing else can insert a round underneath us.
+  for (const [index, { stage, rubricVersionId }] of pinned.entries()) {
+    await tx.stage.create({
+      data: {
+        applicationId,
+        name: stage.name,
+        type: stage.type,
+        position: index,
+        rubricVersionId,
+      },
+    });
+  }
 
-  await record({
-    actorId,
-    action: AUDIT.STAGE_CREATED,
-    entityType: 'Application',
-    entityId: applicationId,
-    applicationId,
-    metadata: {
-      via: 'template',
-      templateId: template.id,
-      templateName: template.name,
-      stageCount: pinned.length,
-      // Which version each round was pinned to, kept where a later reader can
-      // see it even if the rubric has moved on since.
-      rubricVersionIds: pinned.map((p) => p.rubricVersionId),
+  await record(
+    {
+      actorId,
+      action: AUDIT.STAGE_CREATED,
+      entityType: 'Application',
+      entityId: applicationId,
+      applicationId,
+      metadata: {
+        via: 'template',
+        templateId: template.id,
+        templateName: template.name,
+        stageCount: pinned.length,
+        // Which version each round was pinned to, kept where a later reader can
+        // see it even if the rubric has moved on since.
+        rubricVersionIds: pinned.map((p) => p.rubricVersionId),
+      },
     },
-  });
+    tx,
+  );
 
   return pinned.length;
 }
@@ -518,23 +565,32 @@ export async function applyTemplateAction(
 
     const application = await prisma.application.findUnique({
       where: { id: input.applicationId },
-      select: { id: true, status: true, _count: { select: { stages: true } } },
+      select: { id: true, status: true },
     });
     if (!application) throw new NotFoundError('Application');
     assertOpen(application.status);
-    if (application._count.stages > 0) {
-      // Appending instead would silently double a pipeline that was applied
-      // twice, and there is no honest way to guess which of the two the
-      // candidate is actually on.
-      throw new AppError(
-        'This application already has rounds. Remove them before applying a template.',
-      );
-    }
 
-    await materialiseTemplate(input.applicationId, input.templateId, viewer.id);
-    await prisma.application.update({
-      where: { id: input.applicationId },
-      data: { pipelineTemplateId: input.templateId },
+    await prisma.$transaction(async (tx) => {
+      await lockApplicationForPositions(tx, input.applicationId);
+
+      // Counted under the lock, which is the only place the answer is still
+      // true when it is used: a round added a millisecond ago would otherwise
+      // be overwritten at position 0 by the template's first stage. Appending
+      // instead would silently double a pipeline that was applied twice, and
+      // there is no honest way to guess which of the two the candidate is
+      // actually on.
+      const existing = await tx.stage.count({ where: { applicationId: input.applicationId } });
+      if (existing > 0) {
+        throw new AppError(
+          'This application already has rounds. Remove them before applying a template.',
+        );
+      }
+
+      await materialiseTemplate(tx, input.applicationId, input.templateId, viewer.id);
+      await tx.application.update({
+        where: { id: input.applicationId },
+        data: { pipelineTemplateId: input.templateId },
+      });
     });
 
     revalidateApplication(input.applicationId);
@@ -562,7 +618,7 @@ export async function createStageAction(
 
     const application = await prisma.application.findUnique({
       where: { id: input.applicationId },
-      select: { id: true, candidateId: true, status: true, _count: { select: { stages: true } } },
+      select: { id: true, candidateId: true, status: true },
     });
     if (!application) throw new NotFoundError('Application');
     assertOpen(application.status);
@@ -582,30 +638,42 @@ export async function createStageAction(
       ? await linkAssignmentToStage(application.candidateId, input.interviewId, null)
       : null;
 
-    const stage = await prisma.stage.create({
-      data: {
-        applicationId: input.applicationId,
-        name: input.name,
-        type: input.type,
-        // Append. `_count` is the number of existing rows and positions are
-        // contiguous from zero, so the count *is* the next free position.
-        position: application._count.stages,
-        scheduledAt: input.scheduledAt,
-        status: input.scheduledAt ? 'SCHEDULED' : 'PENDING',
-        blindFeedback: input.blindFeedback,
-        rubricVersionId,
-        assignmentId,
-      },
-      select: { id: true },
-    });
+    await prisma.$transaction(async (tx) => {
+      await lockApplicationForPositions(tx, input.applicationId);
 
-    await record({
-      actorId: viewer.id,
-      action: AUDIT.STAGE_CREATED,
-      entityType: 'Stage',
-      entityId: stage.id,
-      applicationId: input.applicationId,
-      metadata: { name: input.name, type: input.type, rubricVersionId, assignmentId },
+      // Counted inside the transaction, after the lock. Read before it — as a
+      // `_count` on the application loaded above — two "Add round" clicks a
+      // moment apart both see 3 and both write position 3.
+      const position = await tx.stage.count({ where: { applicationId: input.applicationId } });
+
+      const stage = await tx.stage.create({
+        data: {
+          applicationId: input.applicationId,
+          name: input.name,
+          type: input.type,
+          // Append. Positions are contiguous from zero, so the count of
+          // existing rounds *is* the next free position.
+          position,
+          scheduledAt: input.scheduledAt,
+          status: input.scheduledAt ? 'SCHEDULED' : 'PENDING',
+          blindFeedback: input.blindFeedback,
+          rubricVersionId,
+          assignmentId,
+        },
+        select: { id: true },
+      });
+
+      await record(
+        {
+          actorId: viewer.id,
+          action: AUDIT.STAGE_CREATED,
+          entityType: 'Stage',
+          entityId: stage.id,
+          applicationId: input.applicationId,
+          metadata: { name: input.name, type: input.type, rubricVersionId, assignmentId },
+        },
+        tx,
+      );
     });
 
     revalidateApplication(input.applicationId);
@@ -789,18 +857,23 @@ export async function setStageStatusAction(
     const stage = await loadStage(input.id);
     const from = currentStageStatus(stage);
 
-    // A coding round's progress belongs to the assignment. Letting someone
-    // hand-set "in progress" on an assessment the candidate has not opened
-    // produces a board that lies, and the lie outlives the correction.
-    if (stage.type === 'CODING_ASSESSMENT' && !isManualStatusAllowedOnCodingStage(input.status)) {
-      throw new AppError(
-        'A coding assessment round follows the assessment itself. Only "complete" and "skipped" can be set by hand here.',
-      );
-    }
-
     if (from === input.status) return ok();
+    // The lifecycle first, then the coding-round restriction — and the two
+    // composed rather than applied one after the other. Asking the coding guard
+    // about the *target* alone refused `AWAITING_FEEDBACK` and `PENDING`, which
+    // are the only exits the transition table gives `COMPLETE` and `SKIPPED`:
+    // between them the two tables made a completed coding round permanent. See
+    // `canSetCodingStageStatusByHand`.
     if (!canTransitionStageStatus(from, input.status)) {
       throw new AppError(stageTransitionError(from, input.status));
+    }
+    if (stage.type === 'CODING_ASSESSMENT' && !canSetCodingStageStatusByHand(from, input.status)) {
+      // A coding round's progress belongs to the assignment. Letting someone
+      // hand-set "in progress" on an assessment the candidate has not opened
+      // produces a board that lies, and the lie outlives the correction.
+      throw new AppError(
+        'A coding assessment round follows the assessment itself. Only "complete" and "skipped" can be set by hand here, and only reopening or un-skipping takes it back.',
+      );
     }
 
     await prisma.stage.update({
@@ -879,19 +952,32 @@ export async function deleteStageAction(
         id: true,
         name: true,
         applicationId: true,
-        feedback: { where: { status: 'SUBMITTED' }, select: { id: true } },
+        // Every row, drafts included — see below.
+        feedback: { select: { id: true, status: true } },
       },
     });
     if (!stage) throw new NotFoundError('Stage');
 
-    // Submitted feedback is evidence. Deleting the round it belongs to cascades
-    // it away, and a scorecard someone wrote about a real conversation is not
-    // ours to destroy because the round was added to the wrong application.
+    // Feedback is evidence, and `Feedback` cascades from `Stage`: deleting the
+    // round destroys it. Submitted scorecards are somebody's account of a real
+    // conversation — but a *draft* is worse to lose, not better. It is the one
+    // thing this product promises belongs to its author alone, nobody else can
+    // even read it, and its author finds out it is gone by opening the round
+    // and finding no round. A recruiter tidying up must not be able to do that
+    // to a colleague who is half way through writing.
     if (stage.feedback.length > 0) {
+      const submitted = stage.feedback.filter((row) => row.status === 'SUBMITTED').length;
+      const drafts = stage.feedback.length - submitted;
+      const detail = [
+        submitted > 0 ? `${submitted} submitted` : null,
+        drafts > 0 ? `${drafts} still in draft` : null,
+      ]
+        .filter((part) => part !== null)
+        .join(', ');
       throw new AppError(
-        `"${stage.name}" has ${stage.feedback.length} submitted ${
+        `"${stage.name}" has ${stage.feedback.length} ${
           stage.feedback.length === 1 ? 'scorecard' : 'scorecards'
-        } against it and cannot be removed. Skip it instead.`,
+        } against it (${detail}) and cannot be removed. Skip it instead, so the scorecards keep the round they were written about.`,
       );
     }
 
@@ -901,22 +987,28 @@ export async function deleteStageAction(
       select: { id: true },
     });
 
-    // Delete and renumber in one transaction. A gap in `position` is harmless
-    // until something counts, and "round 3 of 5" counts.
-    await prisma.$transaction([
-      prisma.stage.delete({ where: { id: stage.id } }),
-      ...remaining.map((row, index) =>
-        prisma.stage.update({ where: { id: row.id }, data: { position: index } }),
-      ),
-    ]);
+    // Delete, renumber and record in one transaction. A gap in `position` is
+    // harmless until something counts, and "round 3 of 5" counts; an audit line
+    // written afterwards on the best-effort path is the only evidence a round
+    // was removed, and a transient failure there loses it silently.
+    await prisma.$transaction(async (tx) => {
+      await lockApplicationForPositions(tx, stage.applicationId);
+      await tx.stage.delete({ where: { id: stage.id } });
+      for (const [index, row] of remaining.entries()) {
+        await tx.stage.update({ where: { id: row.id }, data: { position: index } });
+      }
 
-    await record({
-      actorId: viewer.id,
-      action: AUDIT.STAGE_DELETED,
-      entityType: 'Stage',
-      entityId: stage.id,
-      applicationId: stage.applicationId,
-      metadata: { name: stage.name },
+      await record(
+        {
+          actorId: viewer.id,
+          action: AUDIT.STAGE_DELETED,
+          entityType: 'Stage',
+          entityId: stage.id,
+          applicationId: stage.applicationId,
+          metadata: { name: stage.name },
+        },
+        tx,
+      );
     });
 
     revalidateApplication(stage.applicationId);
@@ -958,17 +1050,26 @@ export async function addPanelistAction(
     });
     if (already) throw new AppError(`${user.name} is already on this panel.`);
 
-    await prisma.stageInterviewer.create({
-      data: { stageId: input.stageId, userId: input.userId, role: input.role },
-    });
+    // Seat and audit line together. A seat is the grant of authority to write a
+    // scorecard about a person's career; "who was put on this panel, by whom,
+    // and when" is the record that has to survive a transient database error,
+    // not a best-effort line that can go missing while the grant stands.
+    await prisma.$transaction(async (tx) => {
+      await tx.stageInterviewer.create({
+        data: { stageId: input.stageId, userId: input.userId, role: input.role },
+      });
 
-    await record({
-      actorId: viewer.id,
-      action: AUDIT.PANEL_ADDED,
-      entityType: 'Stage',
-      entityId: stage.id,
-      applicationId: stage.applicationId,
-      metadata: { userId: input.userId, role: input.role, stageName: stage.name },
+      await record(
+        {
+          actorId: viewer.id,
+          action: AUDIT.PANEL_ADDED,
+          entityType: 'Stage',
+          entityId: stage.id,
+          applicationId: stage.applicationId,
+          metadata: { userId: input.userId, role: input.role, stageName: stage.name },
+        },
+        tx,
+      );
     });
 
     revalidateApplication(stage.applicationId);
@@ -987,6 +1088,22 @@ export async function removePanelistAction(
       stageId: formData.get('stageId'),
       userId: formData.get('userId'),
     });
+
+    // Nobody vacates their own seat.
+    //
+    // The guard below only refuses to remove someone who has already
+    // *submitted* — and a blinded panellist by definition has not, so it never
+    // fires against the person with a reason to abuse this. A hiring manager
+    // seated on a blind round removes themselves, is no longer a panellist,
+    // reads every scorecard already submitted (they hold
+    // `VIEW_ALL_APPLICATIONS`), re-seats themselves and writes an anchored
+    // scorecard. Blind feedback is worth exactly as much as the difficulty of
+    // getting out from under it, so getting out takes another person.
+    if (input.userId === viewer.id) {
+      throw new AppError(
+        'You cannot take yourself off a panel. Ask someone else to remove you — leaving and rejoining a blind round is how a scorecard stops being independent.',
+      );
+    }
 
     const stage = await loadStage(input.stageId);
 
@@ -1009,15 +1126,23 @@ export async function removePanelistAction(
       );
     }
 
-    await prisma.stageInterviewer.delete({ where: { id: seat.id } });
+    // Atomic with the audit line, for the reason given in `addPanelistAction`:
+    // revoking the authority to write a scorecard is exactly as much a matter
+    // of record as granting it.
+    await prisma.$transaction(async (tx) => {
+      await tx.stageInterviewer.delete({ where: { id: seat.id } });
 
-    await record({
-      actorId: viewer.id,
-      action: AUDIT.PANEL_REMOVED,
-      entityType: 'Stage',
-      entityId: stage.id,
-      applicationId: stage.applicationId,
-      metadata: { userId: input.userId, stageName: stage.name },
+      await record(
+        {
+          actorId: viewer.id,
+          action: AUDIT.PANEL_REMOVED,
+          entityType: 'Stage',
+          entityId: stage.id,
+          applicationId: stage.applicationId,
+          metadata: { userId: input.userId, stageName: stage.name },
+        },
+        tx,
+      );
     });
 
     revalidateApplication(stage.applicationId);

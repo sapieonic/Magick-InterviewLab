@@ -23,6 +23,12 @@ import type { InterviewerRole, StageStatus, StageType } from '@/generated/prisma
 const DAY_MS = 24 * 60 * 60 * 1000;
 const NOW = new Date('2026-03-10T12:00:00Z');
 
+/**
+ * Seats are `panel[i]` sitting as `seat-i`, and `submitted` / `drafts` are
+ * written by the first seats in that order — so a scorecard always belongs to
+ * somebody, which is what the count now depends on. `extraFeedback` is for the
+ * cases where the author matters: a shadow who wrote one anyway.
+ */
 function stage(overrides: {
   id: string;
   position: number;
@@ -31,6 +37,7 @@ function stage(overrides: {
   panel?: InterviewerRole[];
   submitted?: number;
   drafts?: number;
+  extraFeedback?: Array<{ authorId: string; status: 'SUBMITTED' | 'DRAFT' }>;
   updatedDaysAgo?: number;
   assignment?: 'ASSIGNED' | 'IN_PROGRESS' | 'COMPLETED' | null;
 }) {
@@ -46,10 +53,20 @@ function stage(overrides: {
     scheduledAt: null,
     updatedAt: new Date(NOW.getTime() - (overrides.updatedDaysAgo ?? 0) * DAY_MS),
     assignment: overrides.assignment ? { status: overrides.assignment } : null,
-    interviewers: (overrides.panel ?? []).map((role) => ({ role })),
+    interviewers: (overrides.panel ?? []).map((role, index) => ({
+      userId: `seat-${index}`,
+      role,
+    })),
     feedback: [
-      ...Array.from({ length: submitted }, () => ({ status: 'SUBMITTED' as const })),
-      ...Array.from({ length: drafts }, () => ({ status: 'DRAFT' as const })),
+      ...Array.from({ length: submitted }, (_, index) => ({
+        authorId: `seat-${index}`,
+        status: 'SUBMITTED' as const,
+      })),
+      ...Array.from({ length: drafts }, (_, index) => ({
+        authorId: `seat-${submitted + index}`,
+        status: 'DRAFT' as const,
+      })),
+      ...(overrides.extraFeedback ?? []),
     ],
   };
 }
@@ -136,6 +153,57 @@ describe('summariseStages', () => {
 
     expect(progress.stages[0]?.expectedScorecards).toBe(1);
     expect(progress.outstandingScorecards).toBe(0);
+  });
+
+  /**
+   * The two halves of the panel denominator, which used to disagree: seats
+   * excluding `SHADOW` over feedback rows counting everybody. A shadow who
+   * submitted made the card read "2/1 scorecards in".
+   */
+  it('does not count a shadow\u2019s scorecard against a panel that never expected it', () => {
+    const progress = summariseStages(
+      [
+        stage({
+          id: 'a',
+          position: 0,
+          status: 'AWAITING_FEEDBACK',
+          panel: ['LEAD', 'SHADOW'],
+          // The lead wrote theirs; seat-1, the shadow, wrote one too.
+          submitted: 1,
+          extraFeedback: [{ authorId: 'seat-1', status: 'SUBMITTED' }],
+        }),
+      ],
+      NOW,
+    );
+
+    const [summary] = progress.stages;
+    if (!summary) throw new Error('expected one stage');
+    expect(summary.expectedScorecards).toBe(1);
+    expect(summary.submittedScorecards).toBe(1);
+    expect(summary.outstandingScorecards).toBe(0);
+    // The invariant, stated rather than inferred: the numerator can never
+    // overtake the denominator, whoever writes what.
+    expect(summary.submittedScorecards).toBeLessThanOrEqual(summary.expectedScorecards);
+  });
+
+  it('still reports the round as outstanding when only the shadow has written', () => {
+    const progress = summariseStages(
+      [
+        stage({
+          id: 'a',
+          position: 0,
+          status: 'AWAITING_FEEDBACK',
+          panel: ['LEAD', 'SHADOW'],
+          extraFeedback: [{ authorId: 'seat-1', status: 'SUBMITTED' }],
+        }),
+      ],
+      NOW,
+    );
+
+    // The lead still owes one. A shadow standing in for them is exactly the
+    // substitution the rule exists to refuse.
+    expect(progress.stages[0]?.submittedScorecards).toBe(0);
+    expect(progress.outstandingScorecards).toBe(1);
   });
 
   it('does not count a draft as submitted', () => {

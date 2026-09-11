@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/db/prisma';
 import { actionGuard, AppError, NotFoundError } from '@/lib/errors';
 import { ok, type ActionResult } from '@/lib/action-result';
-import { AuthorizationError, requireCapability, requireStaff } from '@/features/auth/guards';
+import { requireCapability, requireStaff } from '@/features/auth/guards';
 import { assertPanelMember } from '@/features/pipeline/access';
 import { AUDIT, record } from '@/lib/audit';
 import {
@@ -156,31 +156,41 @@ const EXISTING_SELECT = {
   scores: { select: { criterionId: true, score: true, note: true } },
 } as const;
 
+/** The transaction handle both writes run against. */
+type Tx = Prisma.TransactionClient;
+
 /**
  * Load the stage, the viewer's existing scorecard and the criteria the
- * scorecard is measured against.
+ * scorecard is measured against — all inside the caller's transaction.
  *
  * The rubric version is pinned on the `Feedback` row and, once set, is never
  * re-read from the stage: a scorecard has to keep reporting the criteria it
  * was actually written against even if the stage is later re-pointed. It *is*
  * taken from the stage while still null, so a stage that gained its rubric
  * after someone opened a blank draft is not a dead end.
+ *
+ * `tx` rather than `prisma` is the whole point. Read outside the transaction,
+ * `existing` is a snapshot of a row two requests are about to fight over: two
+ * concurrent edits both see the same prior state, both write a
+ * `FeedbackRevision` holding it, and one edit's content never reaches the
+ * trail at all — which is precisely the append-only guarantee the trail is
+ * for.
  */
-async function loadWriteContext(stageId: string, authorId: string) {
-  const stage = await prisma.stage.findUnique({
+async function loadWriteContext(tx: Tx, stageId: string, authorId: string) {
+  const stage = await tx.stage.findUnique({
     where: { id: stageId },
     select: { id: true, applicationId: true, rubricVersionId: true },
   });
   if (!stage) throw new NotFoundError('Stage');
 
-  const existing = await prisma.feedback.findUnique({
+  const existing = await tx.feedback.findUnique({
     where: { stageId_authorId: { stageId, authorId } },
     select: EXISTING_SELECT,
   });
 
   const pinnedVersionId = existing?.rubricVersionId ?? stage.rubricVersionId;
   const criteria: PinnedCriterion[] = pinnedVersionId
-    ? await prisma.rubricCriterion.findMany({
+    ? await tx.rubricCriterion.findMany({
         where: { rubricVersionId: pinnedVersionId },
         orderBy: { position: 'asc' },
         select: { id: true, name: true, maxScore: true },
@@ -188,6 +198,39 @@ async function loadWriteContext(stageId: string, authorId: string) {
     : [];
 
   return { stage, existing, pinnedVersionId, criteria };
+}
+
+/** P2002 — here, always `feedback_stageId_authorId_key`. */
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code: unknown }).code === 'P2002'
+  );
+}
+
+/**
+ * Run a scorecard write, and run it again if the create lost a race.
+ *
+ * The shape being avoided is the one `linkAssignmentToStage` calls out in the
+ * pipeline module: read, branch on what you read, write. Double-click Submit
+ * and two requests both find no scorecard, both `create`, and the second
+ * violates the unique index — which `actionGuard` renders as "That value is
+ * already taken.", a sentence that means nothing next to a scorecard form.
+ *
+ * A P2002 here means somebody else's create landed between our read and our
+ * write, so re-running the whole callback re-reads, finds the row, and takes
+ * the update path — which is what the second submit meant in the first place.
+ * Once only: a second conflict is not a race a retry loop can resolve.
+ */
+async function writeFeedback<T>(write: (tx: Tx) => Promise<T>): Promise<T> {
+  try {
+    return await prisma.$transaction(write);
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error;
+    return prisma.$transaction(write);
+  }
 }
 
 function revalidateFeedback(stageId: string, applicationId: string): void {
@@ -218,23 +261,24 @@ export async function saveFeedbackDraftAction(
       scores: parsed.scores,
     };
 
-    const { stage, existing, pinnedVersionId, criteria } = await loadWriteContext(
-      parsed.stageId,
-      viewer.id,
-    );
-
-    // Saving over a submitted scorecard would quietly demote evidence back to
-    // a draft and lose the revision trail. Editing is allowed — through
-    // `submitFeedbackAction`, which writes the snapshot first.
-    if (existing?.status === 'SUBMITTED') {
-      throw new AppError(
-        'This scorecard has already been submitted. Edit and submit it again — the change is recorded as a revision.',
+    const applicationId = await writeFeedback(async (tx) => {
+      const { stage, existing, pinnedVersionId, criteria } = await loadWriteContext(
+        tx,
+        parsed.stageId,
+        viewer.id,
       );
-    }
 
-    validateScores(body.scores, criteria, { requireComplete: false });
+      // Saving over a submitted scorecard would quietly demote evidence back to
+      // a draft and lose the revision trail. Editing is allowed — through
+      // `submitFeedbackAction`, which writes the snapshot first.
+      if (existing?.status === 'SUBMITTED') {
+        throw new AppError(
+          'This scorecard has already been submitted. Edit and submit it again — the change is recorded as a revision.',
+        );
+      }
 
-    await prisma.$transaction(async (tx) => {
+      validateScores(body.scores, criteria, { requireComplete: false });
+
       const saved = existing
         ? await tx.feedback.update({
             where: { id: existing.id },
@@ -291,9 +335,11 @@ export async function saveFeedbackDraftAction(
         },
         tx,
       );
+
+      return stage.applicationId;
     });
 
-    revalidateFeedback(parsed.stageId, stage.applicationId);
+    revalidateFeedback(parsed.stageId, applicationId);
     return ok();
   });
 }
@@ -318,19 +364,21 @@ export async function submitFeedbackAction(
     });
     await assertPanelMember(viewer, parsed.stageId);
 
-    const { stage, existing, pinnedVersionId, criteria } = await loadWriteContext(
-      parsed.stageId,
-      viewer.id,
-    );
-
-    // A partial scorecard is not evidence: a debrief that reads "3 of 5
-    // criteria" cannot tell a gap from a reservation.
-    validateScores(parsed.scores, criteria, { requireComplete: true });
-
-    const isRevision = existing?.status === 'SUBMITTED';
     const now = new Date();
 
-    await prisma.$transaction(async (tx) => {
+    const applicationId = await writeFeedback(async (tx) => {
+      const { stage, existing, pinnedVersionId, criteria } = await loadWriteContext(
+        tx,
+        parsed.stageId,
+        viewer.id,
+      );
+
+      // A partial scorecard is not evidence: a debrief that reads "3 of 5
+      // criteria" cannot tell a gap from a reservation.
+      validateScores(parsed.scores, criteria, { requireComplete: true });
+
+      const isRevision = existing?.status === 'SUBMITTED';
+
       if (isRevision && existing) {
         await tx.feedbackRevision.create({
           data: {
@@ -410,13 +458,15 @@ export async function submitFeedbackAction(
         },
         tx,
       );
+
+      return stage.applicationId;
     });
 
     // Deliberately does not move the stage on. Whether a round is complete is
     // the pipeline's call, made once every panellist has reported, and a
     // scorecard action that silently advanced a candidate would be a
     // side effect nobody asked for.
-    revalidateFeedback(parsed.stageId, stage.applicationId);
+    revalidateFeedback(parsed.stageId, applicationId);
     return ok();
   });
 }
@@ -511,10 +561,12 @@ export async function addSubmissionNoteAction(
  * A review thread that a third party can edit is one people stop writing
  * candidly in, which costs more than the occasional stale note.
  *
- * There is no audit action for a deletion in `AUDIT`, so this one write is
- * unrecorded. That is tolerable only because it is self-limited to the
- * author's own row; if notes ever become deletable by anyone else, the
- * constant has to exist first.
+ * "Not yours" and "no such note" are deliberately the same answer. Two
+ * distinguishable outcomes turn this action into an existence oracle: post ids
+ * until one stops saying "not found" and you have enumerated other people's
+ * notes without ever being allowed to read one. This codebase's rule is 404
+ * rather than 403 everywhere else — see `access.ts` — and authorship is not
+ * the exception.
  */
 export async function deleteSubmissionNoteAction(
   _prev: ActionResult<undefined> | null,
@@ -528,8 +580,7 @@ export async function deleteSubmissionNoteAction(
       where: { id },
       select: { id: true, authorId: true, submissionId: true },
     });
-    if (!note) throw new NotFoundError('Note');
-    if (note.authorId !== viewer.id) throw new AuthorizationError();
+    if (!note || note.authorId !== viewer.id) throw new NotFoundError('Note');
     // Still object-level checked: authorship is not access, and a reviewer
     // who has since lost their seat should not be able to reach back in.
     const scope = await resolveSubmissionScope(viewer, note.submissionId);

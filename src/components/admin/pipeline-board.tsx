@@ -42,6 +42,23 @@ const GROUP_ORDER: readonly ApplicationStatus[] = [
   'WITHDRAWN',
 ];
 
+/**
+ * The status in words, shared with the filter on `/admin/pipeline`.
+ *
+ * Exported because there were two copies: the filter had a label map and the
+ * board fell back to the raw enum, so a screen-reader user heard "ON_HOLD"
+ * announced as the heading of a group the sighted filter above calls "On hold".
+ * (`badges.tsx` keeps its own map private, and it pairs each label with a badge
+ * variant — this is the plain text half.)
+ */
+export const APPLICATION_STATUS_LABELS: Record<ApplicationStatus, string> = {
+  ACTIVE: 'Active',
+  ON_HOLD: 'On hold',
+  HIRED: 'Hired',
+  REJECTED: 'Rejected',
+  WITHDRAWN: 'Withdrawn',
+};
+
 const GROUP_BLURB: Record<ApplicationStatus, string> = {
   ACTIVE: 'Moving through the process.',
   ON_HOLD: 'Paused — waiting on the candidate, the requisition or a slot.',
@@ -62,7 +79,7 @@ export function PipelineBoard({ applications }: { applications: readonly Applica
         <section key={group.status} aria-labelledby={`group-${group.status}`}>
           <div className="mb-2.5 flex flex-wrap items-center gap-2">
             <h2 id={`group-${group.status}`} className="sr-only">
-              {group.status}
+              {APPLICATION_STATUS_LABELS[group.status]}
             </h2>
             <ApplicationStatusBadge status={group.status} />
             <span className="text-muted-foreground text-[12px] tabular-nums">

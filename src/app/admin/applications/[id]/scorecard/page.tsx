@@ -2,10 +2,12 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { requireStaffPage } from '@/features/auth/guards';
+import { can } from '@/features/auth/capabilities';
 import { getApplicationScorecard } from '@/features/scorecard/queries';
 import { PageHeader, Section } from '@/components/admin/page-header';
 import {
   ApplicationStatusBadge,
+  DecisionBadge,
   StageOutcomeBadge,
   StageStatusBadge,
   StageTypeBadge,
@@ -13,11 +15,13 @@ import {
 import {
   AutomatedPanel,
   BlindNotice,
+  DecisionSnapshotPanel,
   EvidenceNotice,
   ScorecardCard,
   SignalPanel,
 } from '@/components/admin/scorecard';
 import { DecisionForm } from '@/components/admin/decision-form';
+import { Markdown } from '@/components/markdown';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -61,9 +65,13 @@ export default async function ApplicationScorecardPage({ params }: PageProps) {
           </span>
         }
         actions={
-          <Button asChild size="sm" variant="outline">
-            <Link href={`/admin/candidates/${application.candidateId}`}>Candidate</Link>
-          </Button>
+          // The candidate record needs `MANAGE_USERS`, so for anyone else this
+          // button was a redirect back to /admin dressed as a link.
+          can(viewer.role, 'MANAGE_USERS') ? (
+            <Button asChild size="sm" variant="outline">
+              <Link href={`/admin/candidates/${application.candidateId}`}>Candidate</Link>
+            </Button>
+          ) : undefined
         }
       />
 
@@ -164,19 +172,33 @@ export default async function ApplicationScorecardPage({ params }: PageProps) {
             />
           ) : decision ? (
             <div className="space-y-2">
-              <p className="text-[13px]">
-                Recorded by {decision.decidedByName ?? 'someone no longer on the system'} on{' '}
-                {formatDate(decision.decidedAt)}.
-              </p>
-              <p className="text-muted-foreground text-[13px] whitespace-pre-wrap">
-                {decision.rationale}
-              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                {/* The outcome itself. This branch used to render the decider,
+                    the date and the reasoning but never whether the answer was
+                    hire or no hire — so a recruiter could read the argument
+                    for a decision and not the decision. */}
+                <DecisionBadge outcome={decision.outcome} />
+                <span className="text-muted-foreground text-[12px]">
+                  Recorded by {decision.decidedByName ?? 'someone no longer on the system'} on{' '}
+                  {formatDate(decision.decidedAt)}
+                </span>
+              </div>
+              {/* Markdown, as `DecisionForm` renders it and as the textarea's
+                  own hint promises. Whether a rationale renders should not
+                  depend on the reader's role. */}
+              <Markdown content={decision.rationale} className="text-[13px]" />
             </div>
           ) : (
             <p className="text-muted-foreground text-[13px]">
               No decision has been recorded. The hiring manager or an admin records it here.
             </p>
           )}
+
+          {decision?.snapshot ? (
+            <div className="mt-4">
+              <DecisionSnapshotPanel snapshot={decision.snapshot} />
+            </div>
+          ) : null}
         </Section>
       </div>
     </>

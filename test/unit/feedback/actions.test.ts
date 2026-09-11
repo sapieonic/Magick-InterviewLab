@@ -509,3 +509,119 @@ describe('submission notes', () => {
     expect(auditActions()).toContain('note.deleted');
   });
 });
+
+/**
+ * Read, branch on what you read, write — the shape `linkAssignmentToStage`
+ * calls out in the pipeline module as worth avoiding. Two submits that both
+ * see no scorecard both create one, and the loser of the race used to get
+ * "That value is already taken." beside a scorecard form.
+ */
+describe('two writes racing for the same scorecard', () => {
+  const CONFLICT = Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
+
+  beforeEach(() => {
+    mockStage({ onPanel: true });
+  });
+
+  it('retries into the update path rather than reporting the constraint', async () => {
+    // First attempt sees nothing and takes the create branch; the other
+    // request's row lands first, so the insert violates the unique index.
+    h.db.feedback.findUnique.mockResolvedValueOnce(null);
+    h.db.feedback.create.mockRejectedValueOnce(CONFLICT);
+    mockExisting({ status: 'SUBMITTED' });
+
+    const result = await submitFeedbackAction(null, completeSubmission());
+
+    expect(result.ok).toBe(true);
+    expect(h.db.$transaction).toHaveBeenCalledTimes(2);
+    expect(h.db.feedback.create).toHaveBeenCalledTimes(1);
+    expect(h.db.feedback.update).toHaveBeenCalledTimes(1);
+    // The retry found a submitted scorecard, so the second write is an edit
+    // and leaves the trail behind it.
+    expect(h.db.feedbackRevision.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('does the same for a draft save', async () => {
+    h.db.feedback.findUnique.mockResolvedValueOnce(null);
+    h.db.feedback.create.mockRejectedValueOnce(CONFLICT);
+    mockExisting({ status: 'DRAFT' });
+
+    const result = await saveFeedbackDraftAction(
+      null,
+      form({ stageId: 'stage1', summary: 'still writing' }),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(h.db.feedback.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries once, not forever', async () => {
+    mockExisting(null);
+    h.db.feedback.create.mockRejectedValue(CONFLICT);
+
+    const result = failed(await submitFeedbackAction(null, completeSubmission()));
+
+    expect(result.error).toMatch(/already taken/i);
+    expect(h.db.$transaction).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry a failure that is not the race', async () => {
+    mockExisting(null);
+    h.db.feedback.create.mockRejectedValue(new Error('connection reset'));
+
+    failed(await submitFeedbackAction(null, completeSubmission()));
+
+    expect(h.db.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The prior state has to be read inside the transaction that writes the
+   * revision. Read outside it, two concurrent edits snapshot the same version
+   * and one edit's content never reaches `FeedbackRevision` at all.
+   */
+  it('reads the prior state inside the transaction', async () => {
+    mockExisting({ status: 'SUBMITTED' });
+
+    await submitFeedbackAction(null, completeSubmission());
+
+    const openedTransaction = h.db.$transaction.mock.invocationCallOrder[0] ?? 0;
+    const readExisting = h.db.feedback.findUnique.mock.invocationCallOrder[0] ?? 0;
+    expect(readExisting).toBeGreaterThan(openedTransaction);
+  });
+});
+
+/**
+ * "Not yours" and "no such note" have to be one answer. Two distinguishable
+ * outcomes let anyone post ids until one stops saying "not found", which
+ * enumerates other people's notes without ever reading one — and this codebase
+ * answers 404 rather than 403 everywhere else for exactly that reason.
+ */
+describe('deleting a note does not say whether one exists', () => {
+  function allowSubmission() {
+    h.db.submission.findUnique.mockResolvedValue({
+      id: 'sub1',
+      candidateId: 'cand1',
+      interviewId: 'int1',
+    });
+    h.db.stage.findFirst.mockResolvedValue({ applicationId: 'app1' });
+    h.db.stageInterviewer.findFirst.mockResolvedValue({ id: 'seat1' });
+  }
+
+  it('answers a note that does not exist and one belonging to someone else identically', async () => {
+    allowSubmission();
+
+    h.db.submissionNote.findUnique.mockResolvedValue(null);
+    const missing = failed(await deleteSubmissionNoteAction(null, form({ id: 'note1' })));
+
+    h.db.submissionNote.findUnique.mockResolvedValue({
+      id: 'note1',
+      authorId: 'someone-else',
+      submissionId: 'sub1',
+    });
+    const theirs = failed(await deleteSubmissionNoteAction(null, form({ id: 'note1' })));
+
+    expect(theirs).toEqual(missing);
+    expect(theirs.error).toMatch(/not found/i);
+    expect(h.db.submissionNote.delete).not.toHaveBeenCalled();
+  });
+});

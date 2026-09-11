@@ -6,6 +6,7 @@ import { Eye, Save, Send } from 'lucide-react';
 import type { Confidence, FeedbackStatus, Recommendation } from '@/generated/prisma/enums';
 import { saveFeedbackDraftAction, submitFeedbackAction } from '@/features/feedback/actions';
 import { CONFIDENCE_LABELS, RECOMMENDATION_LABELS } from '@/components/admin/badges';
+import { RECOMMENDATION_ORDER } from '@/features/scorecard/aggregate';
 import { FieldErrors } from '@/components/admin/form';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -55,14 +56,21 @@ export interface FeedbackFormInitial {
   scores: Array<{ criterionId: string; score: number; note: string }>;
 }
 
-const RECOMMENDATION_ORDER: readonly Recommendation[] = [
-  'STRONG_HIRE',
-  'HIRE',
-  'LEAN_HIRE',
-  'LEAN_NO',
-  'NO',
-  'STRONG_NO',
-];
+/**
+ * The scale, best first — which is the *opposite* of `RECOMMENDATION_ORDER`.
+ *
+ * That constant is ordinal: it runs worst to best because the distribution
+ * buckets, the mean position and the min/max of a disagreement all depend on
+ * the scale ascending. A dropdown is not a scale, it is a list someone reads
+ * top-down, and the first thing a reviewer should see is the strongest
+ * endorsement rather than the strongest rejection.
+ *
+ * So the display order is derived from the one definition rather than typed
+ * out again. There used to be a second array of the same name and type, in
+ * this file, pointing the other way; nothing imported the wrong one, which is
+ * exactly the kind of trap that holds until somebody does.
+ */
+const RECOMMENDATION_DISPLAY_ORDER: readonly Recommendation[] = [...RECOMMENDATION_ORDER].reverse();
 
 const CONFIDENCE_ORDER: readonly Confidence[] = ['HIGH', 'MEDIUM', 'LOW'];
 
@@ -207,7 +215,7 @@ export function FeedbackForm({
             onChange={(e) => setRecommendation(e.target.value as Recommendation | '')}
           >
             <option value="">Not yet decided</option>
-            {RECOMMENDATION_ORDER.map((value) => (
+            {RECOMMENDATION_DISPLAY_ORDER.map((value) => (
               <option key={value} value={value}>
                 {RECOMMENDATION_LABELS[value]}
               </option>

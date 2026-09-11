@@ -21,8 +21,13 @@ export const metadata: Metadata = { title: 'My feedback' };
  * long they have personally been the blocker. So the queue leads with days
  * outstanding, sorted oldest first, rather than with the candidate's name.
  */
-function AgeBadge({ days, done }: { days: number; done: boolean }) {
+function AgeBadge({ days, done }: { days: number | null; done: boolean }) {
   if (done) return <Badge variant="outline">Done</Badge>;
+  // Null means the round has not run. Nobody is late for an interview that has
+  // not happened, and an ageing badge on one is how this page came to chase
+  // people for work that did not exist yet — the board says zero outstanding
+  // for exactly these rounds.
+  if (days === null) return <Badge variant="outline">Not due yet</Badge>;
   const variant = days >= 7 ? 'destructive' : days >= 3 ? 'warning' : 'outline';
   return (
     <Badge variant={variant} className="tabular-nums">
@@ -40,7 +45,9 @@ export default async function FeedbackQueuePage() {
     seesEverything ? listOutstandingFeedback(viewer) : Promise.resolve([]),
   ]);
 
-  const owed = mine.filter((row) => row.status !== 'SUBMITTED');
+  // "To write" means due and unwritten. A seat on next month's interview is
+  // listed below, but it is not a scorecard anybody is waiting for.
+  const owed = mine.filter((row) => row.due && row.status !== 'SUBMITTED');
 
   return (
     <>
@@ -56,7 +63,7 @@ export default async function FeedbackQueuePage() {
       <div className="space-y-5">
         <Section
           title="Your rounds"
-          description="Oldest first. Submitting also unlocks the rest of the panel's scorecards."
+          description="Rounds that have run come first, oldest of those first. Submitting also unlocks the rest of the panel's scorecards."
         >
           {mine.length === 0 ? (
             <EmptyState
@@ -90,7 +97,7 @@ export default async function FeedbackQueuePage() {
                   </span>
                   <Button asChild size="xs" variant="outline">
                     <Link href={`/admin/stages/${row.stageId}`}>
-                      {row.status === 'SUBMITTED' ? 'Open' : 'Write'}
+                      {row.status === 'SUBMITTED' ? 'Open' : row.due ? 'Write' : 'Preview'}
                     </Link>
                   </Button>
                 </li>

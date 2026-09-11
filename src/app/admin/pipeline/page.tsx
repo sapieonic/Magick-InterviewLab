@@ -11,7 +11,7 @@ import {
 import { listActiveJobRoleOptions, listActiveTemplateOptions } from '@/features/pipeline/templates';
 import { listApplicationOwners } from '@/features/staff/queries';
 import { PageHeader } from '@/components/admin/page-header';
-import { PipelineBoard } from '@/components/admin/pipeline-board';
+import { APPLICATION_STATUS_LABELS, PipelineBoard } from '@/components/admin/pipeline-board';
 import { ApplicationCreateForm } from '@/components/admin/application-forms';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
@@ -21,14 +21,6 @@ import type { ApplicationStatus } from '@/generated/prisma/enums';
 
 export const metadata: Metadata = { title: 'Pipeline' };
 
-const STATUS_LABELS: Record<ApplicationStatus, string> = {
-  ACTIVE: 'Active',
-  ON_HOLD: 'On hold',
-  HIRED: 'Hired',
-  REJECTED: 'Rejected',
-  WITHDRAWN: 'Withdrawn',
-};
-
 /** A query param is only a filter if it is a non-empty single value. */
 function readParam(value: string | string[] | undefined): string | undefined {
   if (typeof value !== 'string') return undefined;
@@ -37,7 +29,7 @@ function readParam(value: string | string[] | undefined): string | undefined {
 }
 
 function readStatus(value: string | undefined): ApplicationStatus | undefined {
-  return value && value in STATUS_LABELS ? (value as ApplicationStatus) : undefined;
+  return value && value in APPLICATION_STATUS_LABELS ? (value as ApplicationStatus) : undefined;
 }
 
 export default async function PipelinePage({
@@ -120,7 +112,7 @@ export default async function PipelinePage({
             <option value="">All statuses</option>
             {options.statuses.map((value) => (
               <option key={value} value={value}>
-                {STATUS_LABELS[value]}
+                {APPLICATION_STATUS_LABELS[value]}
               </option>
             ))}
           </Select>

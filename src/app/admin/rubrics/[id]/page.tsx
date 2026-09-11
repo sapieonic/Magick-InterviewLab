@@ -1,12 +1,13 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
-import { Archive, CheckCircle2, FilePlus2, Ruler } from 'lucide-react';
+import { Archive, ArchiveRestore, CheckCircle2, FilePlus2, Ruler } from 'lucide-react';
 import { requireCapabilityPage } from '@/features/auth/guards';
 import { getRubric, type RubricVersionRow } from '@/features/rubrics/queries';
 import {
   archiveRubricAction,
   createRubricVersionAction,
   publishRubricVersionAction,
+  unarchiveRubricAction,
 } from '@/features/rubrics/actions';
 import { PageHeader, Section } from '@/components/admin/page-header';
 import {
@@ -108,7 +109,7 @@ export default async function RubricDetailPage({ params }: PageProps) {
               {draft ? `, v${draft.version} in draft` : ''}
             </span>
             <span>
-              Pinned by {stageUsageCount} {stageUsageCount === 1 ? 'stage' : 'stages'}
+              Pinned by {stageUsageCount} {stageUsageCount === 1 ? 'round' : 'rounds'}
             </span>
             <span>Created {formatDate(rubric.createdAt)}</span>
           </span>
@@ -124,34 +125,48 @@ export default async function RubricDetailPage({ params }: PageProps) {
                 </SubmitButton>
               </ActionForm>
             )}
-            <ConfirmAction
-              action={archiveRubricAction}
-              fields={{ id: rubric.id }}
-              title="Archive this rubric?"
-              description={
-                <>
-                  <p>
-                    It drops out of the pickers for new stages. Nothing already scored changes:
-                    every published version stays readable, and the{' '}
-                    <strong>
-                      {stageUsageCount} {stageUsageCount === 1 ? 'stage' : 'stages'}
-                    </strong>{' '}
-                    pinned to one keep it.
-                  </p>
-                  <p>
-                    Rubrics are never deleted. A delete would cascade through the versions and their
-                    criteria to every score entered against them, leaving the scorecards as prose
-                    with the numbers gone.
-                  </p>
-                  <p>You can make it available again from the form on this page.</p>
-                </>
-              }
-              confirmLabel="Archive"
-              triggerLabel="Archive"
-              triggerIcon={<Archive className="size-3.5" aria-hidden />}
-              disabled={!rubric.isActive}
-              success="Rubric archived."
-            />
+            {/*
+              Archive and restore swap places rather than one of them sitting
+              here greyed out: archiving is a filing decision, and the way back
+              has to be where the way out was, not a checkbox in the sidebar.
+            */}
+            {rubric.isActive ? (
+              <ConfirmAction
+                action={archiveRubricAction}
+                fields={{ id: rubric.id }}
+                title="Archive this rubric?"
+                description={
+                  <>
+                    <p>
+                      It drops out of the pickers for new rounds. Nothing already scored changes:
+                      every published version stays readable, and the{' '}
+                      <strong>
+                        {stageUsageCount} {stageUsageCount === 1 ? 'round' : 'rounds'}
+                      </strong>{' '}
+                      pinned to one keep it.
+                    </p>
+                    <p>
+                      Rubrics are never deleted. A delete would cascade through the versions and
+                      their criteria to every score entered against them, leaving the scorecards as
+                      prose with the numbers gone.
+                    </p>
+                    <p>Restore puts it back in the pickers whenever you want it again.</p>
+                  </>
+                }
+                confirmLabel="Archive"
+                triggerLabel="Archive"
+                triggerIcon={<Archive className="size-3.5" aria-hidden />}
+                success="Rubric archived."
+              />
+            ) : (
+              <ActionForm action={unarchiveRubricAction} success="Rubric restored.">
+                <input type="hidden" name="id" value={rubric.id} />
+                <SubmitButton size="sm" variant="outline">
+                  <ArchiveRestore className="size-3.5" aria-hidden />
+                  Restore
+                </SubmitButton>
+              </ActionForm>
+            )}
           </>
         }
       />
@@ -172,7 +187,7 @@ export default async function RubricDetailPage({ params }: PageProps) {
                       <p>
                         Publishing freezes these {draft.criteria.length}{' '}
                         {draft.criteria.length === 1 ? 'criterion' : 'criteria'} and makes the
-                        version eligible to be pinned to a stage.
+                        version eligible to be pinned to a round.
                       </p>
                       <p className="text-destructive">
                         This cannot be undone. A published version can never be edited or
@@ -233,7 +248,7 @@ export default async function RubricDetailPage({ params }: PageProps) {
 
           <Section
             title="Version history"
-            description="Newest first. A stage pins one of these, and the scorecards on it report that version."
+            description="Newest first. A round pins one of these, and the scorecards on it report that version."
           >
             {rubric.versions.length === 0 ? (
               <p className="text-muted-foreground text-[13px]">No versions yet.</p>
@@ -258,7 +273,7 @@ export default async function RubricDetailPage({ params }: PageProps) {
                       </span>
                       <span className="text-muted-foreground flex flex-wrap items-center gap-x-3 text-[12px] tabular-nums">
                         <span>
-                          {version.usageCount} {version.usageCount === 1 ? 'stage' : 'stages'}
+                          {version.usageCount} {version.usageCount === 1 ? 'round' : 'rounds'}
                         </span>
                         <span>
                           {version.feedbackCount}{' '}
@@ -315,7 +330,7 @@ export default async function RubricDetailPage({ params }: PageProps) {
                 <dd>{draft ? `v${draft.version}` : 'None'}</dd>
               </div>
               <div className="flex items-center justify-between gap-2">
-                <dt className="text-muted-foreground">Stages pinned</dt>
+                <dt className="text-muted-foreground">Rounds pinned</dt>
                 <dd className="tabular-nums">{stageUsageCount}</dd>
               </div>
               <div className="flex items-center justify-between gap-2">

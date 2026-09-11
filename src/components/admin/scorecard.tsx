@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { EyeOff, Split, TriangleAlert } from 'lucide-react';
+import { EyeOff, History, Split, TriangleAlert } from 'lucide-react';
 import type { Recommendation } from '@/generated/prisma/enums';
 import {
   RECOMMENDATION_LABELS,
@@ -11,8 +11,12 @@ import {
 import { Markdown } from '@/components/markdown';
 import { Alert } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
-import type { CriterionView, FeedbackView } from '@/features/feedback/queries';
-import type { ScorecardAutomatedRun } from '@/features/scorecard/queries';
+import type {
+  CriterionView,
+  FeedbackRevisionView,
+  FeedbackView,
+} from '@/features/feedback/queries';
+import type { DecisionSnapshotView, ScorecardAutomatedRun } from '@/features/scorecard/queries';
 import {
   normaliseScore,
   scorecardOverall,
@@ -260,6 +264,10 @@ export function ScorecardCard({
         ) : null}
         {feedback.confidence ? <ConfidenceBadge confidence={feedback.confidence} /> : null}
         <FeedbackStatusBadge status={feedback.status} />
+        {/* A rewritten scorecard is read as though it were written on the day
+            it was submitted, because `submittedAt` is preserved. Say so where
+            the reader is looking, not only in a count further down. */}
+        {feedback.revisionCount > 0 ? <Badge variant="warning">Revised</Badge> : null}
         {overall === null ? null : (
           <Badge variant="outline" className="tabular-nums">
             {toPercent(overall)}% rubric
@@ -271,10 +279,7 @@ export function ScorecardCard({
       </header>
 
       {feedback.revisionCount > 0 ? (
-        <p className="text-muted-foreground text-[12px]">
-          Revised {feedback.revisionCount} {feedback.revisionCount === 1 ? 'time' : 'times'}. The
-          earlier versions are kept.
-        </p>
+        <RevisionTrail feedback={feedback} criteria={criteria} />
       ) : null}
 
       {criteria.length > 0 ? (
@@ -321,6 +326,179 @@ export function ScorecardCard({
       <Prose label="Strengths" body={feedback.strengths} />
       <Prose label="Concerns" body={feedback.concerns} />
     </article>
+  );
+}
+
+/**
+ * The append-only trail, actually readable.
+ *
+ * Two things made this necessary. A panellist can submit a one-character
+ * summary purely to unlock the panel, read everyone else and then rewrite
+ * their scorecard — `submittedAt` is preserved, so the rewrite reads as
+ * contemporaneous. And `FeedbackRevision` was written from the first commit
+ * and surfaced only as a count, so "the earlier versions are kept" was a
+ * promise nothing on any page could keep.
+ *
+ * The mitigation is legibility, not prevention: raising the minimum summary
+ * length would punish honest short feedback and stop nobody. So a revised
+ * scorecard says it is revised, says when, says how many times, and — where
+ * the data supports it — says the panel was already readable to the author
+ * when they made the change. Collapsed by default: a debrief reads the current
+ * version first.
+ */
+function RevisionTrail({
+  feedback,
+  criteria,
+}: {
+  feedback: FeedbackView;
+  criteria: readonly CriterionView[];
+}) {
+  const { revisionCount, lastRevisedAt, revisions } = feedback;
+  const times = `${revisionCount} ${revisionCount === 1 ? 'time' : 'times'}`;
+
+  return (
+    <details className="rounded-md border px-3 py-2">
+      <summary className="flex cursor-pointer flex-wrap items-center gap-1.5 text-[12px] font-medium">
+        <History className="size-3.5 shrink-0" aria-hidden />
+        Revised {times}
+        {lastRevisedAt ? (
+          <span className="text-muted-foreground font-normal">
+            · last edited {formatDate(lastRevisedAt)}
+          </span>
+        ) : null}
+      </summary>
+
+      <div className="space-y-3 pt-2.5">
+        {feedback.revisedAfterReadingPanel ? (
+          <p className="text-warning text-[12px]">
+            At least one other scorecard on this round had already been submitted when this one was
+            last edited, so its author could read the panel before rewriting. The submission time
+            above is the original — a revision deliberately does not reset it.
+          </p>
+        ) : null}
+
+        {revisions.length < revisionCount ? (
+          <p className="text-muted-foreground text-[12px]">
+            Showing the most recent {revisions.length} of {revisionCount}.
+          </p>
+        ) : null}
+
+        <ol className="space-y-3">
+          {revisions.map((revision) => (
+            <RevisionEntry key={revision.id} revision={revision} criteria={criteria} />
+          ))}
+        </ol>
+      </div>
+    </details>
+  );
+}
+
+/** One superseded version: what it said, who replaced it and why. */
+function RevisionEntry({
+  revision,
+  criteria,
+}: {
+  revision: FeedbackRevisionView;
+  criteria: readonly CriterionView[];
+}) {
+  const names = new Map(criteria.map((criterion) => [criterion.id, criterion]));
+
+  return (
+    <li className="space-y-1.5 border-l-2 pl-3">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px]">
+        <span className="text-muted-foreground">Replaced {formatDate(revision.at)}</span>
+        {revision.editedByName ? (
+          <span className="text-muted-foreground">by {revision.editedByName}</span>
+        ) : null}
+        {revision.recommendation ? (
+          <RecommendationBadge recommendation={revision.recommendation} />
+        ) : null}
+        {revision.confidence ? <ConfidenceBadge confidence={revision.confidence} /> : null}
+      </div>
+
+      {revision.unreadable ? (
+        <p className="text-muted-foreground text-[12px]">
+          This version was stored in a shape this page cannot read. The edit is still recorded; the
+          content is in the database.
+        </p>
+      ) : (
+        <>
+          {revision.reason ? (
+            <p className="text-[12px]">
+              <span className="text-muted-foreground">Reason given: </span>
+              {revision.reason}
+            </p>
+          ) : (
+            <p className="text-muted-foreground text-[12px]">No reason was given for this edit.</p>
+          )}
+
+          {revision.scores.length > 0 ? (
+            <p className="text-muted-foreground text-[12px] tabular-nums">
+              {revision.scores
+                .map((score) => {
+                  const criterion = names.get(score.criterionId);
+                  return `${criterion?.name ?? 'Removed criterion'} ${score.score}${
+                    criterion ? `/${criterion.maxScore}` : ''
+                  }`;
+                })
+                .join(' · ')}
+            </p>
+          ) : null}
+
+          <Prose label="Summary was" body={revision.summary} />
+          <Prose label="Strengths were" body={revision.strengths} />
+          <Prose label="Concerns were" body={revision.concerns} />
+        </>
+      )}
+    </li>
+  );
+}
+
+/**
+ * What the decider was actually looking at.
+ *
+ * `Decision.snapshot` is captured through the decider's own viewer, blind rule
+ * included, at the moment the call is made. Every number beside it on this
+ * page moves as scorecards arrive and are revised, so without this the page
+ * silently reattributes today's evidence to a decision taken on last month's.
+ */
+export function DecisionSnapshotPanel({ snapshot }: { snapshot: DecisionSnapshotView }) {
+  return (
+    <div className="space-y-3 rounded-md border px-4 py-3">
+      <div className="space-y-0.5">
+        <p className="text-[13px] font-medium">The evidence as it stood when the call was made</p>
+        <p className="text-muted-foreground text-[12px]">
+          {snapshot.capturedAt
+            ? `Captured ${formatDate(snapshot.capturedAt)}.`
+            : 'Captured with the decision.'}{' '}
+          Not recomputed since — a scorecard submitted or revised afterwards changes the numbers
+          above but not these.
+        </p>
+      </div>
+
+      {snapshot.partial ? (
+        <p className="text-muted-foreground text-[12px]">
+          Part of the panel was still hidden from the decider when they recorded this, so these
+          counts are what they could read, not what existed.
+        </p>
+      ) : null}
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <DistributionBar
+          buckets={snapshot.distribution.buckets}
+          total={snapshot.distribution.total}
+        />
+        <dl className="space-y-1.5 text-[13px]">
+          <Row label="Panel" value={`${snapshot.panelSize}`} />
+          <Row label="Submitted" value={`${snapshot.submittedCount}`} />
+          <Row
+            label="Outstanding"
+            value={`${snapshot.outstandingCount}`}
+            tone={snapshot.outstandingCount > 0 ? 'warn' : undefined}
+          />
+        </dl>
+      </div>
+    </div>
   );
 }
 

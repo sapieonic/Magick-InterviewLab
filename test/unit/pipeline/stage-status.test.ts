@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import type { AssignmentStatus, StageStatus } from '@/generated/prisma/enums';
 import {
+  canSetCodingStageStatusByHand,
   canTransitionStageStatus,
+  countScorecards,
   deriveCodingStageStatus,
   isManualStatusAllowedOnCodingStage,
   isStageResolved,
@@ -134,6 +136,114 @@ describe('manual statuses on a coding round', () => {
     expect(isManualStatusAllowedOnCodingStage('SKIPPED')).toBe(true);
     for (const status of ['PENDING', 'SCHEDULED', 'IN_PROGRESS', 'AWAITING_FEEDBACK'] as const) {
       expect(isManualStatusAllowedOnCodingStage(status)).toBe(false);
+    }
+  });
+});
+
+/**
+ * The two tables composed, which is the only way either is ever asked in
+ * anger — and the gap the isolated suites above could not see. Each table was
+ * correct; applying one to the target and the other to the pair made a
+ * completed coding round permanent, because every exit the lifecycle allows
+ * from a terminal state is a status the coding guard refuses.
+ */
+describe('a coding round, lifecycle and manual guard together', () => {
+  it('lets a completed round be reopened', () => {
+    // The pair the two tables used to cancel out.
+    expect(canTransitionStageStatus('COMPLETE', 'AWAITING_FEEDBACK')).toBe(true);
+    expect(isManualStatusAllowedOnCodingStage('AWAITING_FEEDBACK')).toBe(false);
+    expect(canSetCodingStageStatusByHand('COMPLETE', 'AWAITING_FEEDBACK')).toBe(true);
+  });
+
+  it('lets a skipped round be un-skipped', () => {
+    expect(canSetCodingStageStatusByHand('SKIPPED', 'PENDING')).toBe(true);
+  });
+
+  it('leaves every terminal state with a way out', () => {
+    for (const from of ['COMPLETE', 'SKIPPED'] as const) {
+      const exits = STAGE_TRANSITIONS[from].filter((to) => canSetCodingStageStatusByHand(from, to));
+      expect(exits).toEqual([...STAGE_TRANSITIONS[from]]);
+    }
+  });
+
+  it('still refuses progress a person types over the assessment', () => {
+    expect(canSetCodingStageStatusByHand('PENDING', 'SCHEDULED')).toBe(false);
+    expect(canSetCodingStageStatusByHand('PENDING', 'IN_PROGRESS')).toBe(false);
+    expect(canSetCodingStageStatusByHand('IN_PROGRESS', 'AWAITING_FEEDBACK')).toBe(false);
+    expect(canSetCodingStageStatusByHand('SCHEDULED', 'IN_PROGRESS')).toBe(false);
+  });
+
+  it('still allows the two judgements the assessment cannot make', () => {
+    expect(canSetCodingStageStatusByHand('AWAITING_FEEDBACK', 'COMPLETE')).toBe(true);
+    expect(canSetCodingStageStatusByHand('PENDING', 'SKIPPED')).toBe(true);
+  });
+
+  it('never widens the lifecycle itself', () => {
+    for (const from of ALL) {
+      for (const to of ALL) {
+        if (canSetCodingStageStatusByHand(from, to)) {
+          expect(canTransitionStageStatus(from, to)).toBe(true);
+        }
+      }
+    }
+    // Including the one the lifecycle refuses outright: a round that was sat
+    // cannot be retconned into one that never happened, coding or not.
+    expect(canSetCodingStageStatusByHand('COMPLETE', 'SKIPPED')).toBe(false);
+  });
+});
+
+/**
+ * The panel denominator, in the one place both halves of it are decided.
+ * `pipeline/queries.ts` is the caller; the rule lives here so the feedback and
+ * scorecard layers can hold the same one rather than re-deriving it.
+ */
+describe('countScorecards', () => {
+  const lead = { userId: 'u1', role: 'LEAD' as const };
+  const panelist = { userId: 'u2', role: 'PANELIST' as const };
+  const shadow = { userId: 'u3', role: 'SHADOW' as const };
+
+  it('expects one scorecard per non-shadow seat', () => {
+    const counts = countScorecards([lead, panelist, shadow], [], 'AWAITING_FEEDBACK');
+    expect(counts.expected).toBe(2);
+    expect(counts.outstanding).toBe(2);
+  });
+
+  it('does not count a shadow\u2019s submission in the numerator either', () => {
+    const counts = countScorecards(
+      [lead, shadow],
+      [
+        { authorId: 'u1', status: 'SUBMITTED' },
+        { authorId: 'u3', status: 'SUBMITTED' },
+      ],
+      'AWAITING_FEEDBACK',
+    );
+
+    // Not 2/1. Both halves of the fraction apply the same rule about who is
+    // part of the panel's verdict.
+    expect(counts).toEqual({ expected: 1, submitted: 1, outstanding: 0 });
+  });
+
+  it('ignores a scorecard from someone with no seat at all', () => {
+    const counts = countScorecards(
+      [lead],
+      [{ authorId: 'stranger', status: 'SUBMITTED' }],
+      'AWAITING_FEEDBACK',
+    );
+    expect(counts).toEqual({ expected: 1, submitted: 0, outstanding: 1 });
+  });
+
+  it('does not count a draft', () => {
+    const counts = countScorecards([lead], [{ authorId: 'u1', status: 'DRAFT' }], 'COMPLETE');
+    expect(counts.submitted).toBe(0);
+    expect(counts.outstanding).toBe(1);
+  });
+
+  it('owes nothing until the round has run, and nothing once it is skipped', () => {
+    for (const status of ['PENDING', 'SCHEDULED', 'SKIPPED'] as const) {
+      expect(countScorecards([lead, panelist], [], status).outstanding).toBe(0);
+    }
+    for (const status of ['IN_PROGRESS', 'AWAITING_FEEDBACK', 'COMPLETE'] as const) {
+      expect(countScorecards([lead, panelist], [], status).outstanding).toBe(2);
     }
   });
 });

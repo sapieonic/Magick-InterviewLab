@@ -101,6 +101,7 @@ function mockApplication() {
               author: { name: 'Other' },
               scores: [{ criterionId: 'c1', score: 4, note: '' }],
               _count: { revisions: 0 },
+              revisions: [],
             },
           ],
           assignment: null,

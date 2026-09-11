@@ -35,6 +35,7 @@ import {
   createRubricVersionAction,
   publishRubricVersionAction,
   saveRubricVersionAction,
+  unarchiveRubricAction,
   updateRubricAction,
 } from '@/features/rubrics/actions';
 
@@ -111,6 +112,7 @@ describe('rubric actions — authorization', () => {
     ['publishRubricVersionAction', publishRubricVersionAction, { versionId: 'v-1' }],
     ['createRubricVersionAction', createRubricVersionAction, { rubricId: 'r-1' }],
     ['archiveRubricAction', archiveRubricAction, { id: 'r-1' }],
+    ['unarchiveRubricAction', unarchiveRubricAction, { id: 'r-1' }],
   ])('refuses a candidate calling %s, and writes nothing', async (_label, action, fields) => {
     const result = failed(await action(null, form(fields)));
 
@@ -263,6 +265,72 @@ describe('saveRubricVersionAction — a published version is immutable', () => {
     expect(result.error).toBe('Rubric version not found.');
     expect(h.db.$transaction).not.toHaveBeenCalled();
   });
+
+  /**
+   * The read above cannot hold anything still. Author B publishes version 3
+   * between A's read and A's transaction; without an in-transaction guard A
+   * goes on to rewrite and delete the criteria of a frozen version, silently
+   * re-weighting every stage pinned to it — and because
+   * `feedback_scores_criterionId_fkey` is ON DELETE CASCADE, a criterion A
+   * dropped takes every score already entered against it.
+   */
+  describe('when the version is published mid-save', () => {
+    beforeEach(() => {
+      h.db.rubricVersion.findUnique.mockResolvedValue({
+        id: 'v-1',
+        rubricId: 'r-1',
+        version: 3,
+        // Still a draft when read: the publish lands after this.
+        isPublished: false,
+        criteria: [{ id: 'c-a' }, { id: 'c-b' }],
+      });
+      // The conditional write inside the transaction matches nothing, which is
+      // how the database reports that the row is no longer a draft.
+      h.db.rubricVersion.updateMany.mockResolvedValue({ count: 0 });
+    });
+
+    it('refuses the save rather than editing a now-frozen version', async () => {
+      const result = failed(
+        await saveRubricVersionAction({
+          versionId: 'v-1',
+          notes: 'late edit',
+          criteria: [criterion({ id: 'c-a', name: 'Renamed after the freeze' })],
+        }),
+      );
+
+      expect(result.error).toBe(
+        'Version 3 was published while you were editing, so it can no longer be changed. Open a new draft version to carry your changes forward.',
+      );
+    });
+
+    it('drops no criterion, so no scores are cascaded away', async () => {
+      await saveRubricVersionAction({
+        versionId: 'v-1',
+        notes: '',
+        // `c-b` is dropped from the list: the delete this would have issued is
+        // the one that takes `FeedbackScore` rows with it.
+        criteria: [criterion({ id: 'c-a' })],
+      });
+
+      expect(h.db.rubricCriterion.deleteMany).not.toHaveBeenCalled();
+      expect(h.db.rubricCriterion.update).not.toHaveBeenCalled();
+      expect(h.db.rubricCriterion.create).not.toHaveBeenCalled();
+    });
+
+    /** The guard is only a guard if it runs before the destructive work. */
+    it('asserts the draft state as the first write in the transaction', async () => {
+      await saveRubricVersionAction({
+        versionId: 'v-1',
+        notes: '',
+        criteria: [criterion({ id: 'c-a' })],
+      });
+
+      expect(h.db.rubricVersion.updateMany).toHaveBeenCalledWith({
+        where: { id: 'v-1', isPublished: false },
+        data: { notes: '' },
+      });
+    });
+  });
 });
 
 describe('saveRubricVersionAction — writing a draft', () => {
@@ -277,7 +345,9 @@ describe('saveRubricVersionAction — writing a draft', () => {
     h.db.rubricCriterion.update.mockResolvedValue({ id: 'updated' });
     h.db.rubricCriterion.create.mockResolvedValue({ id: 'c-new' });
     h.db.rubricCriterion.deleteMany.mockResolvedValue({ count: 1 });
-    h.db.rubricVersion.update.mockResolvedValue({ id: 'v-1' });
+    // The in-transaction guard: one row matched means the version was still a
+    // draft when the write landed.
+    h.db.rubricVersion.updateMany.mockResolvedValue({ count: 1 });
   });
 
   /**
@@ -399,10 +469,12 @@ describe('saveRubricVersionAction — writing a draft', () => {
       criteria: [criterion({ id: 'c-a' })],
     });
 
-    expect(h.db.rubricVersion.update).toHaveBeenCalledWith({
-      where: { id: 'v-1' },
+    expect(h.db.rubricVersion.updateMany).toHaveBeenCalledWith({
+      where: { id: 'v-1', isPublished: false },
       data: { notes: 'Split communication out of collaboration.' },
     });
+    // Never an unconditional update: that is the write the race would ride in on.
+    expect(h.db.rubricVersion.update).not.toHaveBeenCalled();
   });
 
   it('rejects a weight outside the allowed range instead of clamping it', async () => {
@@ -647,6 +719,51 @@ describe('createRubricVersionAction', () => {
     });
   });
 
+  /**
+   * `nextVersion` is computed from a read, so two authors opening a draft at
+   * the same moment both pick the same number and the loser violates
+   * `rubric_versions_rubricId_version_key`. Left alone that surfaces as
+   * `actionGuard`'s generic "That value is already taken", which names no value
+   * the author ever typed.
+   */
+  it('explains a lost race on the version number instead of leaking P2002', async () => {
+    h.db.rubric.findUnique.mockResolvedValue({
+      id: 'r-1',
+      versions: [{ id: 'v-2', version: 2, isPublished: true, criteria: [] }],
+    });
+    h.db.rubricVersion.create.mockRejectedValue(
+      Object.assign(new Error('Unique constraint failed'), {
+        code: 'P2002',
+        meta: { target: ['rubricId', 'version'] },
+      }),
+    );
+
+    const result = failed(await createRubricVersionAction(null, form({ rubricId: 'r-1' })));
+
+    expect(result.error).toBe(
+      'Someone else opened version 3 while you were starting it. Reload to pick up their draft.',
+    );
+  });
+
+  /**
+   * Deliberately not retried at N+2: the winner's row *is* the one open draft
+   * this rubric is allowed, so a retry would create exactly the second draft
+   * the "one draft at a time" guard exists to refuse.
+   */
+  it('does not retry with a higher number, which would open a second draft', async () => {
+    h.db.rubric.findUnique.mockResolvedValue({
+      id: 'r-1',
+      versions: [{ id: 'v-2', version: 2, isPublished: true, criteria: [] }],
+    });
+    h.db.rubricVersion.create.mockRejectedValue(
+      Object.assign(new Error('conflict'), { code: 'P2002' }),
+    );
+
+    failed(await createRubricVersionAction(null, form({ rubricId: 'r-1' })));
+
+    expect(h.db.rubricVersion.create).toHaveBeenCalledTimes(1);
+  });
+
   it('starts at version 1 for a rubric that somehow has none', async () => {
     h.db.rubric.findUnique.mockResolvedValue({ id: 'r-1', versions: [] });
     h.db.rubricVersion.create.mockResolvedValue({ id: 'v-1' });
@@ -688,6 +805,57 @@ describe('archiveRubricAction', () => {
 
     expect(result.error).toBe('Rubric not found.');
     expect(h.db.rubric.update).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Archiving is a filing decision, not a destructive one, so it has to be
+ * undoable by whoever has just realised they archived the wrong rubric.
+ */
+describe('unarchiveRubricAction', () => {
+  it('puts the rubric back in the pickers', async () => {
+    h.db.rubric.findUnique.mockResolvedValue({ id: 'r-1' });
+    h.db.rubric.update.mockResolvedValue({ id: 'r-1' });
+
+    const result = await unarchiveRubricAction(null, form({ id: 'r-1' }));
+
+    expect(result.ok).toBe(true);
+    expect(h.db.rubric.update).toHaveBeenCalledWith({
+      where: { id: 'r-1' },
+      data: { isActive: true },
+    });
+  });
+
+  /** Restoring a rubric says nothing about its versions: a draft stays a
+   *  draft, and publishing remains the only thing that freezes one. */
+  it('republishes nothing on the way back', async () => {
+    h.db.rubric.findUnique.mockResolvedValue({ id: 'r-1' });
+    h.db.rubric.update.mockResolvedValue({ id: 'r-1' });
+
+    await unarchiveRubricAction(null, form({ id: 'r-1' }));
+
+    expect(h.db.rubricVersion.update).not.toHaveBeenCalled();
+    expect(h.db.rubricVersion.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('reports a rubric that does not exist', async () => {
+    h.db.rubric.findUnique.mockResolvedValue(null);
+
+    const result = failed(await unarchiveRubricAction(null, form({ id: 'r-nope' })));
+
+    expect(result.error).toBe('Rubric not found.');
+    expect(h.db.rubric.update).not.toHaveBeenCalled();
+  });
+
+  it('busts the pickers that were hiding it', async () => {
+    h.db.rubric.findUnique.mockResolvedValue({ id: 'r-1' });
+    h.db.rubric.update.mockResolvedValue({ id: 'r-1' });
+
+    await unarchiveRubricAction(null, form({ id: 'r-1' }));
+
+    const paths = h.revalidatePath.mock.calls.map((call) => call[0]);
+    expect(paths).toContain('/admin/rubrics/r-1');
+    expect(paths).toContain('/admin/pipeline');
   });
 });
 

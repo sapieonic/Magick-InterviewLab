@@ -22,8 +22,9 @@ import {
   updateStageAction,
 } from '@/features/pipeline/actions';
 import {
+  canSetCodingStageStatusByHand,
   canTransitionStageStatus,
-  isManualStatusAllowedOnCodingStage,
+  STAGE_REOPEN_TARGET,
   STAGE_STATUS_LABELS,
 } from '@/features/pipeline/stage-status';
 import {
@@ -135,10 +136,24 @@ function allowedStatuses(stage: StageListItem): StageStatus[] {
     if (status === stage.status) return true;
     if (!canTransitionStageStatus(stage.status, status)) return false;
     // A coding round's progress belongs to the assessment; only the two
-    // judgements the assessment cannot make are offered by hand.
-    if (stage.type === 'CODING_ASSESSMENT') return isManualStatusAllowedOnCodingStage(status);
+    // judgements the assessment cannot make — and the moves that withdraw one
+    // — are offered by hand. Asked about the target alone this filter left a
+    // completed coding round with one option, itself.
+    if (stage.type === 'CODING_ASSESSMENT') {
+      return canSetCodingStageStatusByHand(stage.status, status);
+    }
     return true;
   });
+}
+
+/** The one move out of a terminal state reads as what it is. "Set status to
+ *  awaiting feedback" is the mechanism; "reopen" is the decision. */
+function statusOptionLabel(from: StageStatus, to: StageStatus): string {
+  if (from === 'COMPLETE' && to === STAGE_REOPEN_TARGET) {
+    return `Reopen — ${STAGE_STATUS_LABELS[to].toLowerCase()}`;
+  }
+  if (from === 'SKIPPED' && to === 'PENDING') return 'Un-skip — pending';
+  return STAGE_STATUS_LABELS[to];
 }
 
 export function StageList({
@@ -147,6 +162,8 @@ export function StageList({
   staff,
   interviews,
   editable,
+  canReviewSubmissions,
+  viewerId,
 }: {
   applicationId: string;
   stages: StageListItem[];
@@ -156,6 +173,14 @@ export function StageList({
    *  rounds they sit on, and the controls simply are not rendered. The actions
    *  guard the same capability regardless. */
   editable: boolean;
+  /** `VIEW_ALL_APPLICATIONS`, which is what `/admin/submissions` requires.
+   *  Offered to an interviewer, the cross-link below is a dead end: the page
+   *  redirects them to `/admin` with no explanation, which reads as the console
+   *  being broken rather than as a boundary. */
+  canReviewSubmissions: boolean;
+  /** Whose console this is, so their own seat does not offer a control the
+   *  action refuses — nobody takes themselves off a panel. */
+  viewerId: string;
 }) {
   const [ordered, setOptimisticOrder] = useOptimistic(stages);
   const [pending, startTransition] = useTransition();
@@ -240,7 +265,8 @@ export function StageList({
                     <>
                       <p>The round and its panel are deleted and the rest are renumbered.</p>
                       <p>
-                        A round with submitted feedback cannot be removed — skip it instead, so the
+                        A round with any feedback against it cannot be removed — a submitted
+                        scorecard or somebody&rsquo;s unfinished draft. Skip it instead, so the
                         scorecards keep the round they were written about.
                       </p>
                     </>
@@ -280,12 +306,14 @@ export function StageList({
                     ? ''
                     : ` · best ${stage.assignment.bestScore}%`}
                 </span>
-                <Link
-                  href={`/admin/submissions?interviewId=${stage.assignment.interview.id}`}
-                  className="hover:text-primary ml-auto transition-colors"
-                >
-                  Review submissions
-                </Link>
+                {canReviewSubmissions ? (
+                  <Link
+                    href={`/admin/submissions?interviewId=${stage.assignment.interview.id}`}
+                    className="hover:text-primary ml-auto transition-colors"
+                  >
+                    Review submissions
+                  </Link>
+                ) : null}
               </div>
             ) : stage.type === 'CODING_ASSESSMENT' && editable ? (
               <LinkAssessmentForm
@@ -302,7 +330,7 @@ export function StageList({
               </div>
             ) : null}
 
-            <PanelManager stage={stage} staff={staff} editable={editable} />
+            <PanelManager stage={stage} staff={staff} editable={editable} viewerId={viewerId} />
 
             {editable ? <StageEditForm stage={stage} /> : null}
           </div>
@@ -336,7 +364,7 @@ function StageStatusForm({ stage }: { stage: StageListItem }) {
         >
           {options.map((status) => (
             <option key={status} value={status}>
-              {STAGE_STATUS_LABELS[status]}
+              {statusOptionLabel(stage.status, status)}
             </option>
           ))}
         </Select>
@@ -356,7 +384,7 @@ function StageStatusForm({ stage }: { stage: StageListItem }) {
       {stage.type === 'CODING_ASSESSMENT' ? (
         <p className="text-muted-foreground w-full text-[11px]">
           This round follows the assessment itself — only &ldquo;complete&rdquo; and
-          &ldquo;skipped&rdquo; are set by hand.
+          &ldquo;skipped&rdquo; are set by hand, and either can be taken back.
         </p>
       ) : null}
     </ActionForm>
@@ -519,10 +547,12 @@ function PanelManager({
   stage,
   staff,
   editable,
+  viewerId,
 }: {
   stage: StageListItem;
   staff: StaffOption[];
   editable: boolean;
+  viewerId: string;
 }) {
   const seated = new Set(stage.panel.map((member) => member.userId));
   const available = staff.filter((person) => !seated.has(person.id));
@@ -544,7 +574,7 @@ function PanelManager({
             >
               <span className="max-w-40 truncate">{member.name}</span>
               <InterviewerRoleBadge role={member.role} />
-              {editable ? (
+              {editable && member.userId !== viewerId ? (
                 <ActionForm action={removePanelistAction} success="Removed from the panel.">
                   <HiddenFields fields={{ stageId: stage.id, userId: member.userId }} />
                   <SubmitButton
@@ -556,6 +586,13 @@ function PanelManager({
                     <X className="size-3" aria-hidden />
                   </SubmitButton>
                 </ActionForm>
+              ) : null}
+              {/* Not a disabled control with no explanation, and not an
+                  affordance the action would refuse: leaving and rejoining a
+                  blind round is how a scorecard stops being independent, so it
+                  takes somebody else. */}
+              {editable && member.userId === viewerId ? (
+                <span className="text-muted-foreground">You</span>
               ) : null}
             </li>
           ))}

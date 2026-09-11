@@ -149,7 +149,7 @@ export default async function AdminDashboardPage() {
 
       <Section
         title="Recent activity"
-        description="Stage moves, scorecards and decisions across the candidates you can see."
+        description="Round moves, scorecards and decisions across the candidates you can see."
       >
         {activity.length === 0 ? (
           <EmptyState

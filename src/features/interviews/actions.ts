@@ -255,6 +255,30 @@ export async function unassignInterviewAction(
       interviewId: formData.get('interviewId'),
     });
 
+    // A pipeline round can be *backed* by this assignment, and the foreign key
+    // is `ON DELETE SET NULL`: deleting the assignment silently blanks
+    // `stages.assignmentId`. Nothing about the round changes visibly at the
+    // moment it happens, which is what makes it dangerous — a coding round
+    // whose assignment was `COMPLETED` reads as "awaiting feedback" everywhere
+    // through `deriveCodingStageStatus`, and with the assignment gone it
+    // reverts to "pending" for a round that was submitted days ago, taking the
+    // code and the test results the panellist was reviewing with it.
+    //
+    // So this refuses rather than detaching. Detaching quietly is the bug;
+    // detaching loudly is `deleteStageAction`'s job, where the round and its
+    // panel go together and the removal is recorded against the application.
+    const pinned = await prisma.stage.findFirst({
+      where: {
+        assignment: { is: { interviewId: input.interviewId, candidateId: input.candidateId } },
+      },
+      select: { name: true },
+    });
+    if (pinned) {
+      throw new AppError(
+        `That assessment backs the round "${pinned.name}" on this candidate's application. Remove that round first — unassigning here would leave the round pointing at nothing and reset the progress it is showing.`,
+      );
+    }
+
     const { count } = await prisma.interviewAssignment.deleteMany({
       where: { interviewId: input.interviewId, candidateId: input.candidateId },
     });

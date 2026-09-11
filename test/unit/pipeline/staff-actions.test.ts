@@ -26,7 +26,7 @@ vi.mock('@/features/auth/session', () => ({
 }));
 
 import { resetPrismaMock } from '../../helpers/prisma-mock';
-import { setUserRoleAction } from '@/features/staff/actions';
+import { setStaffActiveAction, setUserRoleAction } from '@/features/staff/actions';
 
 function actor(overrides: Partial<SessionUser> = {}): SessionUser {
   return {
@@ -110,6 +110,69 @@ describe('setUserRoleAction', () => {
     h.getCurrentUser.mockResolvedValue(actor({ id: 'rec-1', role: 'RECRUITER' }));
 
     const result = failed(await setUserRoleAction(null, form({ id: 'int-1', role: 'ADMIN' })));
+
+    expect(result.error).toMatch(/permission/i);
+    expect(h.db.user.update).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Deactivation, now that the settings table actually offers it. Same lockout
+ * reasoning as a self-demotion: the capability that could undo it is the one
+ * being taken away.
+ */
+describe('setStaffActiveAction', () => {
+  it('refuses to deactivate your own account', async () => {
+    const result = failed(
+      await setStaffActiveAction(null, form({ id: 'admin-1', isActive: 'false' })),
+    );
+
+    expect(result.error).toMatch(/your own account/i);
+    expect(h.db.user.update).not.toHaveBeenCalled();
+  });
+
+  it('deactivates a colleague and signs their sessions out', async () => {
+    h.db.user.findUnique.mockResolvedValue({ id: 'int-1', role: 'INTERVIEWER', name: 'Lena' });
+
+    const result = await setStaffActiveAction(null, form({ id: 'int-1', isActive: 'false' }));
+
+    expect(result.ok).toBe(true);
+    expect(h.db.user.update).toHaveBeenCalledWith({
+      where: { id: 'int-1' },
+      data: { isActive: false },
+    });
+    expect(h.destroyAllSessionsFor).toHaveBeenCalledWith('int-1');
+  });
+
+  it('reactivates without touching sessions', async () => {
+    h.db.user.findUnique.mockResolvedValue({ id: 'int-1', role: 'INTERVIEWER', name: 'Lena' });
+
+    const result = await setStaffActiveAction(null, form({ id: 'int-1', isActive: 'true' }));
+
+    expect(result.ok).toBe(true);
+    // Nothing to destroy: they could not sign in while deactivated, so there
+    // is no old session to resurrect.
+    expect(h.destroyAllSessionsFor).not.toHaveBeenCalled();
+  });
+
+  it('sends an admin to the candidates screen for a candidate account', async () => {
+    h.db.user.findUnique.mockResolvedValue({ id: 'cand-1', role: 'CANDIDATE', name: 'Ada' });
+
+    const result = failed(
+      await setStaffActiveAction(null, form({ id: 'cand-1', isActive: 'false' })),
+    );
+
+    expect(result.error).toContain('Ada');
+    expect(result.error).toMatch(/candidates screen/i);
+    expect(h.db.user.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses a non-admin outright', async () => {
+    h.getCurrentUser.mockResolvedValue(actor({ id: 'rec-1', role: 'RECRUITER' }));
+
+    const result = failed(
+      await setStaffActiveAction(null, form({ id: 'int-1', isActive: 'false' })),
+    );
 
     expect(result.error).toMatch(/permission/i);
     expect(h.db.user.update).not.toHaveBeenCalled();

@@ -1,4 +1,9 @@
-import type { AssignmentStatus, StageStatus } from '@/generated/prisma/enums';
+import type {
+  AssignmentStatus,
+  FeedbackStatus,
+  InterviewerRole,
+  StageStatus,
+} from '@/generated/prisma/enums';
 
 /**
  * The stage lifecycle, as pure data.
@@ -36,7 +41,8 @@ export const STAGE_TRANSITIONS = {
   SKIPPED: ['PENDING'],
 } as const satisfies Record<StageStatus, readonly StageStatus[]>;
 
-/** The one move out of a terminal state, called out so the UI can label it. */
+/** The one move out of `COMPLETE`, named so the UI can label the control
+ *  "Reopen" rather than "Set to awaiting feedback". */
 export const STAGE_REOPEN_TARGET: StageStatus = 'AWAITING_FEEDBACK';
 
 /**
@@ -122,4 +128,117 @@ export const CODING_STAGE_MANUAL_STATUSES: readonly StageStatus[] = ['COMPLETE',
 
 export function isManualStatusAllowedOnCodingStage(status: StageStatus): boolean {
   return CODING_STAGE_MANUAL_STATUSES.includes(status);
+}
+
+/**
+ * The two tables above, composed — which is the only way either is safe to ask.
+ *
+ * Read on its own, `isManualStatusAllowedOnCodingStage` says a coding round may
+ * only be set to `COMPLETE` or `SKIPPED` by hand. Read on its own,
+ * `STAGE_TRANSITIONS` says the only way out of `COMPLETE` is
+ * `AWAITING_FEEDBACK` and the only way out of `SKIPPED` is `PENDING`. Applied
+ * one after the other to a *target* status they cancel each other out: every
+ * exit from a terminal state is a status the coding guard refuses, so a coding
+ * round marked complete could never be reopened and a skipped one could never
+ * be un-skipped. The documented reopen was unreachable.
+ *
+ * The resolution is that the coding guard is about *claiming progress the
+ * assignment owns*, not about leaving a state a person put the round in.
+ * `COMPLETE` and `SKIPPED` are the two human judgements; withdrawing one hands
+ * the round straight back to `deriveCodingStageStatus`, which re-derives it
+ * from the assignment — so the write claims nothing the assignment does not
+ * already say. Every other hand-set move on a live coding round is still
+ * refused, which is the whole point of the guard.
+ */
+export function canSetCodingStageStatusByHand(from: StageStatus, to: StageStatus): boolean {
+  if (!canTransitionStageStatus(from, to)) return false;
+  if (isManualStatusAllowedOnCodingStage(to)) return true;
+  // Leaving a terminal state: a judgement being withdrawn, not progress typed
+  // over the assessment.
+  return isStageResolved(from);
+}
+
+// --- the panel's scorecards -------------------------------------------------
+
+/** A panel seat, narrowed to what counting needs. */
+export interface CountableSeat {
+  userId: string;
+  role: InterviewerRole;
+}
+
+/** A scorecard, narrowed to what counting needs. Status and author only — the
+ *  prose is access-controlled elsewhere and is never needed to count. */
+export interface CountableScorecard {
+  authorId: string;
+  status: FeedbackStatus;
+}
+
+export interface ScorecardCounts {
+  /** Seats that owe a scorecard. */
+  expected: number;
+  /** Submitted scorecards from those seats. Never exceeds `expected`. */
+  submitted: number;
+  /** What is actually late, which is zero until the round has run. */
+  outstanding: number;
+}
+
+/**
+ * A shadow is an observer: they are on the round to learn, not to judge.
+ *
+ * The single definition, exported so the read models, the feedback layer and
+ * the scorecard aggregate all answer "is this person's opinion part of the
+ * panel's verdict" the same way, rather than each filtering `SHADOW` (or
+ * forgetting to) on its own.
+ */
+export function isExpectedToScore(role: InterviewerRole): boolean {
+  return role !== 'SHADOW';
+}
+
+/**
+ * A scorecard is not late until there is something to write about.
+ *
+ * `PENDING` and `SCHEDULED` rounds have not happened; nobody owes anything yet.
+ * `SKIPPED` never will. Exported for the same reason as `isExpectedToScore`:
+ * three other modules were each deciding this for themselves.
+ */
+export function isScorecardDue(status: StageStatus): boolean {
+  return status === 'IN_PROGRESS' || status === 'AWAITING_FEEDBACK' || status === 'COMPLETE';
+}
+
+/**
+ * How many scorecards a round is owed and how many have arrived.
+ *
+ * **This is the single definition of the panel denominator**, and both halves
+ * have to come from it or the numbers contradict each other. The bug it exists
+ * to prevent: the denominator excluded `SHADOW` seats while the numerator
+ * counted every submitted row, so a shadow who submitted one made the stage
+ * card render "3/2 scorecards in".
+ *
+ * The rule chosen, and why: a shadow's scorecard is **neither expected nor
+ * counted**. The alternative — widening the denominator to include any shadow
+ * who happened to submit — would make the panel's size depend on who got round
+ * to writing something, and would quietly restore a shadow's opinion to the
+ * verdict the moment they typed one. A shadow is there to learn; if their view
+ * is meant to count, they are a `PANELIST`, and that is a seat someone assigns
+ * on purpose.
+ *
+ * Counting the numerator by seat rather than by row is what makes
+ * `submitted <= expected` true by construction: `Feedback` is unique per
+ * `(stageId, authorId)`, so each expected seat contributes at most one.
+ */
+export function countScorecards(
+  seats: readonly CountableSeat[],
+  feedback: readonly CountableScorecard[],
+  status: StageStatus,
+): ScorecardCounts {
+  const owed = new Set(seats.filter((seat) => isExpectedToScore(seat.role)).map((s) => s.userId));
+  const expected = owed.size;
+  const submitted = feedback.filter(
+    (row) => row.status === 'SUBMITTED' && owed.has(row.authorId),
+  ).length;
+  return {
+    expected,
+    submitted,
+    outstanding: isScorecardDue(status) ? Math.max(0, expected - submitted) : 0,
+  };
 }

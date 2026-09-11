@@ -93,10 +93,19 @@ export default async function ApplicationDetailPage({ params }: PageProps) {
   if (!application) notFound();
 
   const editable = can(viewer.role, 'MANAGE_PIPELINE');
+  // `/admin/submissions` needs this and bounces anyone else to `/admin`, so it
+  // decides whether the cross-link is offered at all — see the candidate link
+  // at the foot of this page for the same pattern.
+  const canReviewSubmissions = can(viewer.role, 'VIEW_ALL_APPLICATIONS');
 
   const [timeline, staff, owners, jobRoles, templates, rubrics, interviews] = await Promise.all([
-    getApplicationTimeline(application.id),
-    listStaffForPanel(),
+    getApplicationTimeline(viewer, application.id),
+    // Behind `editable` like every other picker's data: `StageList` is a client
+    // component, so anything passed to it is serialised into the flight payload
+    // whether or not a picker renders — and `StaffOption` carries an email
+    // address. An interviewer with one seat on one application could read the
+    // whole staff directory in View Source.
+    editable ? listStaffForPanel() : Promise.resolve([]),
     editable ? listApplicationOwners() : Promise.resolve([]),
     editable ? listActiveJobRoleOptions() : Promise.resolve([]),
     editable ? listActiveTemplateOptions() : Promise.resolve([]),
@@ -156,6 +165,8 @@ export default async function ApplicationDetailPage({ params }: PageProps) {
               staff={staff}
               interviews={interviews}
               editable={editable}
+              canReviewSubmissions={canReviewSubmissions}
+              viewerId={viewer.id}
             />
           </Section>
 
