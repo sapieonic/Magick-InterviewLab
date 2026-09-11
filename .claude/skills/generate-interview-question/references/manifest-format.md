@@ -5,7 +5,7 @@ questions or an object with a `questions` array. Prefer the object form with a
 `version`:
 
 ```json
-{ "version": 1, "questions": [ /* … */ ] }
+{ "version": 1, "questions": [/* … */] }
 ```
 
 The envelope is lenient (an unknown top-level key and any `version` number are
@@ -14,25 +14,25 @@ misspelled field name is a hard error, not silently dropped.
 
 ## Question fields
 
-| Field | Type | Required | Rules / default |
-| --- | --- | --- | --- |
-| `title` | string | **yes** | trimmed, 1–160 chars. Must be unique within the manifest; an existing title in the bank is skipped on import. |
-| `description` | string (Markdown) | no | ≤ 20000 chars. Default `""`. What the candidate reads. |
-| `difficulty` | enum | no | `EASY` \| `MEDIUM` \| `HARD`. Default `EASY`. |
-| `supportedLanguages` | array | no | 1–2 of `JAVASCRIPT`, `PYTHON` (uppercase, unique). Default `["JAVASCRIPT","PYTHON"]`. |
-| `starterCode` | object | no | Keys are **lowercase** runtime ids (`javascript`, `python`) and must be a subset of `supportedLanguages`; each value a string ≤ 20000 chars. A key for an unsupported language is dropped on import. Default `{}`. |
-| `timeLimitMs` | integer | no | 500–30000. Default 5000. Per test case. |
-| `memoryLimitMb` | integer | no | 16–2048. Default 128. Advisory only (not enforced by browser execution). |
-| `testCases` | array | no | 0–50 entries (a question with 0 always scores 0). Default `[]`. |
+| Field                | Type              | Required | Rules / default                                                                                                                                                                                                    |
+| -------------------- | ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `title`              | string            | **yes**  | trimmed, 1–160 chars. Must be unique within the manifest; an existing title in the bank is skipped on import.                                                                                                      |
+| `description`        | string (Markdown) | no       | ≤ 20000 chars. Default `""`. What the candidate reads.                                                                                                                                                             |
+| `difficulty`         | enum              | no       | `EASY` \| `MEDIUM` \| `HARD`. Default `EASY`.                                                                                                                                                                      |
+| `supportedLanguages` | array             | no       | 1–2 of `JAVASCRIPT`, `PYTHON` (uppercase, unique). Default `["JAVASCRIPT","PYTHON"]`.                                                                                                                              |
+| `starterCode`        | object            | no       | Keys are **lowercase** runtime ids (`javascript`, `python`) and must be a subset of `supportedLanguages`; each value a string ≤ 20000 chars. A key for an unsupported language is dropped on import. Default `{}`. |
+| `timeLimitMs`        | integer           | no       | 500–30000. Default 5000. Per test case.                                                                                                                                                                            |
+| `memoryLimitMb`      | integer           | no       | 16–2048. Default 128. Advisory only (not enforced by browser execution).                                                                                                                                           |
+| `testCases`          | array             | no       | 0–50 entries (a question with 0 always scores 0). Default `[]`.                                                                                                                                                    |
 
 ## Test-case fields
 
-| Field | Type | Required | Rules / default |
-| --- | --- | --- | --- |
-| `input` | string | no | Fed to stdin. ≤ 20000 chars. Default `""`. |
-| `expectedOutput` | string | no | Compared against trimmed stdout. ≤ 20000 chars. Default `""`. |
-| `description` | string | no | ≤ 300 chars. What the case checks (shown to reviewers). |
-| `weight` | integer | no | 1–100. Default 1. Relative weight in the score. |
+| Field            | Type    | Required | Rules / default                                               |
+| ---------------- | ------- | -------- | ------------------------------------------------------------- |
+| `input`          | string  | no       | Fed to stdin. ≤ 20000 chars. Default `""`.                    |
+| `expectedOutput` | string  | no       | Compared against trimmed stdout. ≤ 20000 chars. Default `""`. |
+| `description`    | string  | no       | ≤ 300 chars. What the case checks (shown to reviewers).       |
+| `weight`         | integer | no       | 1–100. Default 1. Relative weight in the score.               |
 
 `id`, `position`, `isHidden`, `createdAt` etc. are server-managed — do not
 include them. Position follows array order.
@@ -44,11 +44,11 @@ trailing whitespace per line stripped, leading/trailing blank lines removed).
 If they aren't exactly equal, two fallbacks apply: a single numeric literal on
 both sides matches within epsilon (`0.1+0.2` ≈ `0.3`), and two JSON-parseable
 sides match structurally (`[1, 2]` ≡ `[1,2]`, key order ignored). Derive
-`expectedOutput` by *running your reference solution* — never hand-compute it.
+`expectedOutput` by _running your reference solution_ — never hand-compute it.
 
 ## Worked example (JavaScript, EASY)
 
-```json
+````json
 {
   "version": 1,
   "questions": [
@@ -70,7 +70,7 @@ sides match structurally (`[1, 2]` ≡ `[1,2]`, key order ignored). Derive
     }
   ]
 }
-```
+````
 
 Reference solution used for validation (NOT shipped):
 

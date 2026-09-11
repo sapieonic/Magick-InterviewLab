@@ -47,7 +47,7 @@ For each question, write:
 1. A **title** (≤ 160 chars) and a **Markdown description** the candidate reads.
    State the input format, the output format, and show a worked example. Keep to
    the stdin→stdout contract.
-2. **Starter code** for each supported language — a *scaffold*, not a solution.
+2. **Starter code** for each supported language — a _scaffold_, not a solution.
    It should read the input and leave the actual answer as a `// TODO` /
    `# TODO`. **Never put the solution in `starterCode`** — candidates see it.
 3. **Test cases** (aim for 4–8): cover the normal case, edge cases (empty/zero,
@@ -56,6 +56,7 @@ For each question, write:
    candidate** in this MVP, so don't rely on hidden tests.
 
 Difficulty guidance:
+
 - **EASY** — one idea, a few lines (parse a line, a loop, a slice).
 - **MEDIUM** — a data structure or a non-obvious step (hashing, two pointers,
   sorting, a small state machine).
@@ -63,6 +64,7 @@ Difficulty guidance:
   traversal, non-trivial math), with test cases that punish the naive approach.
 
 The I/O APIs the runtime provides:
+
 - **JavaScript** — `readLine()` returns the next input line (or `null`),
   `readAll()` returns the whole input; print with `console.log()`.
 - **Python** — read with `sys.stdin` (e.g. `sys.stdin.readline()` or
@@ -87,7 +89,7 @@ Write two files to a scratch directory:
 - `solutions.json` — an array **parallel to `questions`**, each entry mapping a
   lowercase runtime id to that question's reference solution:
   ```json
-  { "solutions": [ { "javascript": "…", "python": "…" }, { "python": "…" } ] }
+  { "solutions": [{ "javascript": "…", "python": "…" }, { "python": "…" }] }
   ```
   A reference solution is required for every language a question supports.
 
@@ -105,7 +107,7 @@ passes.
 
 **Do not deliver a manifest until the validator prints `✓ VALID` and exits 0.**
 If it reports a failure — a wrong `expectedOutput`, a solution that errors, a
-typo'd field — fix the manifest (or the reference solution, if *it* is wrong) and
+typo'd field — fix the manifest (or the reference solution, if _it_ is wrong) and
 re-run. Treat a mismatch as a real bug in the question, not noise to override.
 
 ## Step 5 — Deliver
@@ -124,4 +126,4 @@ manifest (the importer accepts up to 200 per file).
   the field names in the reference exactly.
 - `starterCode` keys are **lowercase** (`javascript`, `python`) and must be a
   subset of `supportedLanguages`.
-- Expected outputs come from *running the solution*, not from guessing.
+- Expected outputs come from _running the solution_, not from guessing.
