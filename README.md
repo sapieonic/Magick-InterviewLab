@@ -280,7 +280,7 @@ directly in the tests rather than left to follow from the routing.
 | `/admin/applications/[id]/scorecard` | any staff who can see it                       | The debrief. Every submitted scorecard in full, the aggregate signal, and the decision panel for whoever holds `DECIDE`.                                     |
 | `/admin/feedback`                    | any staff                                      | Your outstanding scorecards, oldest first. Feedback rots fast.                                                                                               |
 | `/admin/rubrics`                     | admin                                          | Rubric authoring and version history.                                                                                                                        |
-| `/admin/settings`                    | admin                                          | Job roles, pipeline templates and staff accounts.                                                                                                            |
+| `/admin/settings`                    | any staff; each section gated separately       | Job roles, pipeline templates and staff accounts — all admin-only in practice. Staff without those capabilities are told so rather than silently redirected. |
 
 A round of work looks like this:
 
