@@ -12,14 +12,49 @@
         "javascript": "const line = readLine() ?? '';\n\n// TODO: scan the line left to right, tracking still-open brackets.\n// - if a closing bracket has nothing open, or doesn't match the most\n//   recently opened bracket, print \"INVALID i\" (i = that index) and stop\n// - if the line ends with brackets still open, print \"UNCLOSED i\"\n//   (i = index of the earliest still-unclosed opening bracket)\n// - otherwise print \"BALANCED\"\n"
       },
       "testCases": [
-        { "description": "nested, fully balanced", "input": "([{}])", "expectedOutput": "BALANCED", "weight": 1 },
-        { "description": "wrong-type close", "input": "([)]", "expectedOutput": "INVALID 2", "weight": 3 },
-        { "description": "closing bracket with nothing open", "input": ")", "expectedOutput": "INVALID 0", "weight": 3 },
-        { "description": "unclosed opener remains at end", "input": "(()", "expectedOutput": "UNCLOSED 0", "weight": 3 },
+        {
+          "description": "nested, fully balanced",
+          "input": "([{}])",
+          "expectedOutput": "BALANCED",
+          "weight": 1
+        },
+        {
+          "description": "wrong-type close",
+          "input": "([)]",
+          "expectedOutput": "INVALID 2",
+          "weight": 3
+        },
+        {
+          "description": "closing bracket with nothing open",
+          "input": ")",
+          "expectedOutput": "INVALID 0",
+          "weight": 3
+        },
+        {
+          "description": "unclosed opener remains at end",
+          "input": "(()",
+          "expectedOutput": "UNCLOSED 0",
+          "weight": 3
+        },
         { "description": "empty line", "input": "", "expectedOutput": "BALANCED", "weight": 1 },
-        { "description": "single opening bracket", "input": "(", "expectedOutput": "UNCLOSED 0", "weight": 2 },
-        { "description": "longer balanced input", "input": "{[()()]}", "expectedOutput": "BALANCED", "weight": 2 },
-        { "description": "mismatch not at the start", "input": "()(]", "expectedOutput": "INVALID 3", "weight": 2 }
+        {
+          "description": "single opening bracket",
+          "input": "(",
+          "expectedOutput": "UNCLOSED 0",
+          "weight": 2
+        },
+        {
+          "description": "longer balanced input",
+          "input": "{[()()]}",
+          "expectedOutput": "BALANCED",
+          "weight": 2
+        },
+        {
+          "description": "mismatch not at the start",
+          "input": "()(]",
+          "expectedOutput": "INVALID 3",
+          "weight": 2
+        }
       ]
     }
   ]

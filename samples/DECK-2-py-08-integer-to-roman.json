@@ -12,14 +12,44 @@
         "python": "import sys\n\nn = int(sys.stdin.readline().strip())\n\n# TODO: convert n to its uppercase Roman numeral representation and print it.\n# Remember the six subtractive forms: IV, IX, XL, XC, CD, CM.\n"
       },
       "testCases": [
-        { "description": "plain additive number, no subtractive forms", "input": "23", "expectedOutput": "XXIII", "weight": 1 },
-        { "description": "subtractive form IV (4)", "input": "4", "expectedOutput": "IV", "weight": 1 },
-        { "description": "subtractive form IX (9)", "input": "9", "expectedOutput": "IX", "weight": 1 },
-        { "description": "several subtractive forms combined (CM, XC, IV)", "input": "1994", "expectedOutput": "MCMXCIV", "weight": 3 },
+        {
+          "description": "plain additive number, no subtractive forms",
+          "input": "23",
+          "expectedOutput": "XXIII",
+          "weight": 1
+        },
+        {
+          "description": "subtractive form IV (4)",
+          "input": "4",
+          "expectedOutput": "IV",
+          "weight": 1
+        },
+        {
+          "description": "subtractive form IX (9)",
+          "input": "9",
+          "expectedOutput": "IX",
+          "weight": 1
+        },
+        {
+          "description": "several subtractive forms combined (CM, XC, IV)",
+          "input": "1994",
+          "expectedOutput": "MCMXCIV",
+          "weight": 3
+        },
         { "description": "minimum boundary", "input": "1", "expectedOutput": "I", "weight": 1 },
-        { "description": "maximum boundary", "input": "3999", "expectedOutput": "MMMCMXCIX", "weight": 3 },
+        {
+          "description": "maximum boundary",
+          "input": "3999",
+          "expectedOutput": "MMMCMXCIX",
+          "weight": 3
+        },
         { "description": "round thousand", "input": "2000", "expectedOutput": "MM", "weight": 1 },
-        { "description": "zero digit in the middle (hundreds place), mid-range value", "input": "1050", "expectedOutput": "ML", "weight": 2 }
+        {
+          "description": "zero digit in the middle (hundreds place), mid-range value",
+          "input": "1050",
+          "expectedOutput": "ML",
+          "weight": 2
+        }
       ]
     }
   ]

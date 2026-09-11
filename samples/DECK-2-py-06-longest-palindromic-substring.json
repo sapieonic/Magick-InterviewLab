@@ -12,14 +12,54 @@
         "python": "import sys\n\n\ndef main():\n    s = sys.stdin.readline().strip()\n\n    # TODO: find the longest contiguous palindromic substring of s.\n    # If multiple substrings tie for the longest length, print the one\n    # that starts earliest in s. Remember a palindrome can be centred\n    # on a single letter (odd length) or between two letters (even length).\n\n\nif __name__ == \"__main__\":\n    main()\n"
       },
       "testCases": [
-        { "description": "odd-length palindrome inside a longer string", "input": "babad", "expectedOutput": "bab", "weight": 2 },
-        { "description": "even-length palindrome (even-centre case)", "input": "cbbd", "expectedOutput": "bb", "weight": 3 },
-        { "description": "no palindrome longer than one character", "input": "abcde", "expectedOutput": "a", "weight": 2 },
-        { "description": "the whole string is a palindrome", "input": "racecar", "expectedOutput": "racecar", "weight": 2 },
-        { "description": "tie between two equal-length palindromes, earliest start wins", "input": "abaxcdc", "expectedOutput": "aba", "weight": 3 },
-        { "description": "single character input", "input": "z", "expectedOutput": "z", "weight": 1 },
-        { "description": "whole string is a short even-length palindrome", "input": "aa", "expectedOutput": "aa", "weight": 1 },
-        { "description": "longer input with an embedded palindrome", "input": "zxqjplaabcddcbaqwmnhgexyztuvrsklopqf", "expectedOutput": "abcddcba", "weight": 2 }
+        {
+          "description": "odd-length palindrome inside a longer string",
+          "input": "babad",
+          "expectedOutput": "bab",
+          "weight": 2
+        },
+        {
+          "description": "even-length palindrome (even-centre case)",
+          "input": "cbbd",
+          "expectedOutput": "bb",
+          "weight": 3
+        },
+        {
+          "description": "no palindrome longer than one character",
+          "input": "abcde",
+          "expectedOutput": "a",
+          "weight": 2
+        },
+        {
+          "description": "the whole string is a palindrome",
+          "input": "racecar",
+          "expectedOutput": "racecar",
+          "weight": 2
+        },
+        {
+          "description": "tie between two equal-length palindromes, earliest start wins",
+          "input": "abaxcdc",
+          "expectedOutput": "aba",
+          "weight": 3
+        },
+        {
+          "description": "single character input",
+          "input": "z",
+          "expectedOutput": "z",
+          "weight": 1
+        },
+        {
+          "description": "whole string is a short even-length palindrome",
+          "input": "aa",
+          "expectedOutput": "aa",
+          "weight": 1
+        },
+        {
+          "description": "longer input with an embedded palindrome",
+          "input": "zxqjplaabcddcbaqwmnhgexyztuvrsklopqf",
+          "expectedOutput": "abcddcba",
+          "weight": 2
+        }
       ]
     }
   ]
