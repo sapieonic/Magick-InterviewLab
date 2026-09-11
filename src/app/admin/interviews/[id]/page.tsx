@@ -21,6 +21,7 @@ import {
   ActiveBadge,
   AssignmentStatusBadge,
   InterviewStatusBadge,
+  ScoreBadge,
 } from '@/components/admin/badges';
 import { ActionForm } from '@/components/admin/action-form';
 import { ConfirmAction } from '@/components/admin/confirm-action';
@@ -28,7 +29,15 @@ import { SubmitButton } from '@/components/admin/form';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/select';
 import { EmptyState } from '@/components/ui/empty-state';
-import { formatDate } from '@/lib/utils';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { formatDate, formatDuration } from '@/lib/utils';
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -168,42 +177,52 @@ export default async function InterviewDetailPage({ params }: PageProps) {
               }))}
             />
           </Section>
-        </div>
 
-        <aside className="space-y-5">
+          {/*
+            The cohort, and how it went. This is the one screen that holds
+            everyone who sat a given assessment, and until now it held their
+            names and nothing else — the performance was a click away on each
+            candidate, which meant nobody ever compared a question against the
+            people who answered it.
+
+            It sits in the main column rather than the sidebar because it is now
+            a table: six columns do not fit a 22rem aside, and truncating a
+            candidate's result to make it fit is how a screen starts lying.
+          */}
           <Section
             title="Assigned candidates"
-            description="Only assigned candidates can see this interview."
-          >
-            {availableCandidates.length > 0 ? (
-              <ActionForm
-                action={assignInterviewAction}
-                success="Candidate assigned."
-                className="mb-4 flex items-center gap-2"
-              >
-                <input type="hidden" name="interviewId" value={interview.id} />
-                <Select
-                  name="candidateId"
-                  aria-label="Candidate to assign"
-                  required
-                  defaultValue=""
-                  className="h-8 text-[13px]"
+            description="Everyone who can sit this interview, and how their sitting went."
+            actions={
+              availableCandidates.length > 0 ? (
+                <ActionForm
+                  action={assignInterviewAction}
+                  success="Candidate assigned."
+                  className="flex items-center gap-2"
                 >
-                  <option value="" disabled>
-                    Assign candidate…
-                  </option>
-                  {availableCandidates.map((candidate) => (
-                    <option key={candidate.id} value={candidate.id}>
-                      {candidate.name} · {candidate.email}
+                  <input type="hidden" name="interviewId" value={interview.id} />
+                  <Select
+                    name="candidateId"
+                    aria-label="Candidate to assign"
+                    required
+                    defaultValue=""
+                    className="h-8 w-56 text-[13px]"
+                  >
+                    <option value="" disabled>
+                      Assign candidate…
                     </option>
-                  ))}
-                </Select>
-                <SubmitButton size="sm" variant="outline">
-                  Assign
-                </SubmitButton>
-              </ActionForm>
-            ) : null}
-
+                    {availableCandidates.map((candidate) => (
+                      <option key={candidate.id} value={candidate.id}>
+                        {candidate.name} · {candidate.email}
+                      </option>
+                    ))}
+                  </Select>
+                  <SubmitButton size="sm" variant="outline">
+                    Assign
+                  </SubmitButton>
+                </ActionForm>
+              ) : null
+            }
+          >
             {interview.candidates.length === 0 ? (
               <EmptyState
                 icon={Users}
@@ -212,42 +231,114 @@ export default async function InterviewDetailPage({ params }: PageProps) {
                 className="border-none py-6"
               />
             ) : (
-              <ul className="divide-border -my-2 divide-y">
-                {interview.candidates.map((row) => (
-                  <li key={row.assignmentId} className="flex items-center gap-2 py-2">
-                    <div className="min-w-0 flex-1">
-                      <Link
-                        href={`/admin/candidates/${row.candidate.id}`}
-                        className="hover:text-primary block truncate text-[13px] font-medium transition-colors"
-                      >
-                        {row.candidate.name}
-                      </Link>
-                      <p className="text-muted-foreground truncate text-[12px]">
-                        {row.candidate.email}
-                      </p>
-                    </div>
-                    <span className="flex shrink-0 items-center gap-1.5">
-                      {row.candidate.isActive ? null : <ActiveBadge isActive={false} />}
-                      <AssignmentStatusBadge status={row.status} />
-                      <ActionForm action={unassignInterviewAction} success="Candidate unassigned.">
-                        <input type="hidden" name="interviewId" value={interview.id} />
-                        <input type="hidden" name="candidateId" value={row.candidate.id} />
-                        <SubmitButton
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={`Unassign ${row.candidate.name}`}
-                          title="Unassign"
+              <Table className="min-w-[46rem]">
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead>Candidate</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Tests</TableHead>
+                    <TableHead>Attempts</TableHead>
+                    <TableHead>Elapsed</TableHead>
+                    <TableHead>Completed</TableHead>
+                    <TableHead>
+                      <span className="sr-only">Unassign</span>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {interview.candidates.map((row) => (
+                    <TableRow key={row.assignmentId}>
+                      <TableCell className="max-w-[16rem]">
+                        <Link
+                          href={`/admin/candidates/${row.candidate.id}`}
+                          className="hover:text-primary block truncate text-[13px] font-medium transition-colors"
                         >
-                          <X className="size-3.5" aria-hidden />
-                        </SubmitButton>
-                      </ActionForm>
-                    </span>
-                  </li>
-                ))}
-              </ul>
+                          {row.candidate.name}
+                        </Link>
+                        <span className="text-muted-foreground block truncate text-[12px]">
+                          {row.candidate.email}
+                        </span>
+                      </TableCell>
+
+                      <TableCell className="whitespace-nowrap">
+                        <span className="flex items-center gap-1.5">
+                          <AssignmentStatusBadge status={row.status} />
+                          {row.candidate.isActive ? null : <ActiveBadge isActive={false} />}
+                        </span>
+                      </TableCell>
+
+                      {/* No score for somebody who has not answered anything.
+                          A rendered 0% is not an empty cell being tidy, it is
+                          a claim about a person who never sat the thing. */}
+                      <TableCell>
+                        {row.rollUp.score === null ? (
+                          <span className="text-muted-foreground text-[13px]">—</span>
+                        ) : (
+                          <span className="flex items-center gap-1.5">
+                            <span className="text-[13px] tabular-nums">
+                              {row.rollUp.passedCount}/{row.rollUp.totalCount}
+                            </span>
+                            <ScoreBadge score={row.rollUp.score} />
+                          </span>
+                        )}
+                      </TableCell>
+
+                      <TableCell className="text-[13px] whitespace-nowrap tabular-nums">
+                        {row.rollUp.attempts === 0 ? (
+                          <span className="text-muted-foreground">—</span>
+                        ) : (
+                          <>
+                            {row.rollUp.attempts} · {row.rollUp.questionsAnswered}q
+                          </>
+                        )}
+                      </TableCell>
+
+                      {/* Elapsed is a plain fact and stays one: no colour, no
+                          threshold, no comparison with the row above. Fast is
+                          not good, and a duration styled as a comparator is an
+                          accommodation problem rather than a weak metric —
+                          extra time is an adjustment people are entitled to and
+                          it lands in exactly this number. */}
+                      <TableCell className="text-[13px] whitespace-nowrap tabular-nums">
+                        <span title="Wall clock between the candidate first opening the assessment and answering the last question. Breaks are included.">
+                          {row.elapsedMs === null
+                            ? row.startedAt
+                              ? 'in progress'
+                              : '—'
+                            : formatDuration(row.elapsedMs)}
+                        </span>
+                      </TableCell>
+
+                      <TableCell className="text-muted-foreground text-[13px] whitespace-nowrap">
+                        {formatDate(row.completedAt)}
+                      </TableCell>
+
+                      <TableCell className="text-right">
+                        <ActionForm
+                          action={unassignInterviewAction}
+                          success="Candidate unassigned."
+                        >
+                          <input type="hidden" name="interviewId" value={interview.id} />
+                          <input type="hidden" name="candidateId" value={row.candidate.id} />
+                          <SubmitButton
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`Unassign ${row.candidate.name}`}
+                            title="Unassign"
+                          >
+                            <X className="size-3.5" aria-hidden />
+                          </SubmitButton>
+                        </ActionForm>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             )}
           </Section>
+        </div>
 
+        <aside className="space-y-5">
           <Section title="At a glance">
             <dl className="space-y-2 text-[13px]">
               <div className="flex items-center justify-between gap-2">

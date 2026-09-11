@@ -26,6 +26,7 @@ import type {
   Recommendation,
   StageStatus,
   StageType,
+  SubmissionTrigger,
 } from '@/generated/prisma/enums';
 
 /**
@@ -203,6 +204,11 @@ export interface StageSubmissionView {
   score: number;
   passedCount: number;
   totalCount: number;
+  /** Whether the candidate submitted this or the deadline did. Without it, a
+   *  snapshot of half-finished work is indistinguishable from a considered
+   *  final answer, and the reviewer on this page is exactly the person who
+   *  would misread it. */
+  trigger: SubmissionTrigger;
   submittedAt: Date;
   results: ParsedResults;
 }
@@ -568,6 +574,7 @@ async function loadStageSubmissions(assignment: {
       score: true,
       passedCount: true,
       totalCount: true,
+      trigger: true,
       submittedAt: true,
       results: true,
       question: { select: { title: true } },
@@ -582,6 +589,7 @@ async function loadStageSubmissions(assignment: {
     score: row.score,
     passedCount: row.passedCount,
     totalCount: row.totalCount,
+    trigger: row.trigger,
     submittedAt: row.submittedAt,
     results: parseStoredResults(row.results),
   }));

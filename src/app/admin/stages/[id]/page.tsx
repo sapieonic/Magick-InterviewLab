@@ -1,10 +1,10 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { ClipboardList, FileCode2 } from 'lucide-react';
+import { ClipboardList, FileCode2, History } from 'lucide-react';
 import { requireStaffPage } from '@/features/auth/guards';
 import { can } from '@/features/auth/capabilities';
-import { getStageForFeedback } from '@/features/feedback/queries';
+import { getStageForFeedback, type StageSubmissionView } from '@/features/feedback/queries';
 import { PageHeader, Section } from '@/components/admin/page-header';
 import {
   FeedbackStatusBadge,
@@ -118,7 +118,7 @@ export default async function StagePage({ params }: PageProps) {
           {stage.type === 'CODING_ASSESSMENT' ? (
             <Section
               title="Submitted code"
-              description="The candidate's answers, so the rubric is filled in beside the thing it judges."
+              description="The candidate's answers, so the rubric is filled in beside the thing it judges. Latest attempt per question; the earlier ones are kept, folded away."
             >
               {submissions.length === 0 ? (
                 <p className="text-muted-foreground flex items-center gap-1.5 text-[13px]">
@@ -126,31 +126,46 @@ export default async function StagePage({ params }: PageProps) {
                   Nothing has been submitted for this assessment yet.
                 </p>
               ) : (
-                <ul className="space-y-4">
-                  {submissions.map((submission) => (
-                    <li key={submission.id} className="min-w-0 space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Link
-                          href={`/admin/submissions/${submission.id}`}
-                          className="hover:text-primary min-w-0 flex-1 truncate text-[13px] font-medium transition-colors"
-                        >
-                          {submission.questionTitle}
-                        </Link>
-                        <Badge variant="outline">
-                          {submission.passedCount}/{submission.totalCount} tests
-                        </Badge>
-                        <ScoreBadge score={submission.score} />
-                        <span className="text-muted-foreground text-[12px]">
-                          {formatDate(submission.submittedAt)}
-                        </span>
-                      </div>
-                      <CodeBlock code={submission.sourceCode} maxHeight="20rem" />
-                      {submission.results.fatalError ? (
+                <ul className="space-y-5">
+                  {groupByQuestion(submissions).map((group) => (
+                    <li key={group.questionTitle} className="min-w-0 space-y-2">
+                      <SubmissionHeading
+                        submission={group.latest}
+                        attempt={group.attempts}
+                        attempts={group.attempts}
+                      />
+                      <CodeBlock code={group.latest.sourceCode} maxHeight="20rem" />
+                      {group.latest.results.fatalError ? (
                         <Alert tone="error" title="The run failed before the tests completed">
                           <pre className="font-mono text-[12px] whitespace-pre-wrap">
-                            {submission.results.fatalError}
+                            {group.latest.results.fatalError}
                           </pre>
                         </Alert>
+                      ) : null}
+
+                      {group.earlier.length > 0 ? (
+                        <details className="rounded-md border px-3 py-2">
+                          <summary className="flex cursor-pointer flex-wrap items-center gap-1.5 text-[12px] font-medium">
+                            <History className="size-3.5 shrink-0" aria-hidden />
+                            {group.earlier.length} earlier{' '}
+                            {group.earlier.length === 1 ? 'attempt' : 'attempts'}
+                            <span className="text-muted-foreground font-normal">
+                              · superseded by the code above
+                            </span>
+                          </summary>
+                          <ol className="space-y-3 pt-2.5">
+                            {group.earlier.map((submission, index) => (
+                              <li key={submission.id} className="min-w-0 space-y-2">
+                                <SubmissionHeading
+                                  submission={submission}
+                                  attempt={group.earlier.length - index}
+                                  attempts={group.attempts}
+                                />
+                                <CodeBlock code={submission.sourceCode} maxHeight="14rem" />
+                              </li>
+                            ))}
+                          </ol>
+                        </details>
                       ) : null}
                     </li>
                   ))}
@@ -214,5 +229,122 @@ export default async function StagePage({ params }: PageProps) {
         </aside>
       </div>
     </>
+  );
+}
+
+/** One question's attempts, newest first. */
+interface SubmissionGroup {
+  questionTitle: string;
+  latest: StageSubmissionView;
+  /** Everything the latest one replaced, newest first. */
+  earlier: StageSubmissionView[];
+  attempts: number;
+}
+
+/**
+ * Latest attempt per question, questions in the order the candidate first
+ * reached them.
+ *
+ * The flat list this replaces rendered every run as a full code block, so a
+ * candidate who resubmitted three times filled the page with two versions of
+ * code nobody should be scored on — and the reviewer scrolling it had no way
+ * of knowing which block was the answer without comparing timestamps. The
+ * superseded runs are still here, because "they tried it this way first" is
+ * sometimes the interesting part; they are just not in the way.
+ *
+ * Grouped by title rather than by question id: the stage read model carries
+ * the title and not the id, and a checklist of attempts is not worth widening
+ * that query for. Two distinct questions with the same title in one interview
+ * would merge, which is a question-bank problem long before it is this page's.
+ *
+ * The interview's own question order is not in this read model either, so the
+ * groups are ordered by their earliest submission — the order the candidate
+ * worked in, which is the order a reviewer reading their session expects.
+ */
+function groupByQuestion(submissions: readonly StageSubmissionView[]): SubmissionGroup[] {
+  const byQuestion = new Map<string, StageSubmissionView[]>();
+  for (const submission of submissions) {
+    const existing = byQuestion.get(submission.questionTitle);
+    if (existing) existing.push(submission);
+    else byQuestion.set(submission.questionTitle, [submission]);
+  }
+
+  const groups: SubmissionGroup[] = [];
+  for (const [questionTitle, rows] of byQuestion) {
+    // The read model orders newest first, but sorting here rather than
+    // trusting that keeps "latest" true if the query's order ever changes.
+    const ordered = [...rows].sort((a, b) => b.submittedAt.getTime() - a.submittedAt.getTime());
+    const [latest, ...earlier] = ordered;
+    if (!latest) continue;
+    groups.push({ questionTitle, latest, earlier, attempts: ordered.length });
+  }
+
+  return groups.sort((a, b) => firstAttemptAt(a) - firstAttemptAt(b));
+}
+
+function firstAttemptAt(group: SubmissionGroup): number {
+  const oldest = group.earlier.at(-1) ?? group.latest;
+  return oldest.submittedAt.getTime();
+}
+
+/**
+ * The row above a block of code: which attempt it is, how it scored, when it
+ * landed.
+ *
+ * The attempt number is shown only where there is more than one, so a single
+ * submission is not dressed up as a sequence.
+ *
+ * What belongs here and is missing: `Submission.trigger`. An `AUTO_DEADLINE`
+ * snapshot of half-finished code renders identically to a deliberate final
+ * answer, so a reviewer reads "1/4 tests" as the candidate's judgement rather
+ * than as the clock running out. The column exists and is in the generated
+ * client, but `loadStageSubmissions` in `src/features/feedback/queries.ts`
+ * does not select it and `StageSubmissionView` does not carry it — that file
+ * is not this change's to edit, so the badge is deliberately not faked from
+ * something else.
+ */
+function SubmissionHeading({
+  submission,
+  attempt,
+  attempts,
+}: {
+  submission: StageSubmissionView;
+  attempt: number;
+  attempts: number;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Link
+        href={`/admin/submissions/${submission.id}`}
+        className="hover:text-primary min-w-0 flex-1 truncate text-[13px] font-medium transition-colors"
+      >
+        {submission.questionTitle}
+      </Link>
+      {attempts > 1 ? (
+        <Badge variant="outline">
+          Attempt {attempt} of {attempts}
+        </Badge>
+      ) : null}
+      <Badge variant="outline">
+        {submission.passedCount}/{submission.totalCount} tests
+      </Badge>
+      <ScoreBadge score={submission.score} />
+      {/* Sits next to the score on purpose: this is the one badge that changes
+          what the score *means*. Half-finished work the timer snapshotted and
+          a considered final answer are the same row without it, and the
+          reviewer on this page is exactly the person who would read 1/4 tests
+          as the candidate's judgement. */}
+      {submission.trigger === 'AUTO_DEADLINE' ? (
+        <Badge
+          variant="outline"
+          title="The workspace submitted whatever was in the editor when the timer reached zero. The candidate did not choose to stop here."
+        >
+          Auto-submitted at deadline
+        </Badge>
+      ) : null}
+      <span className="text-muted-foreground text-[12px]">
+        {formatDate(submission.submittedAt)}
+      </span>
+    </div>
   );
 }

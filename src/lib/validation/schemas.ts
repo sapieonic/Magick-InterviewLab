@@ -189,12 +189,18 @@ export const testResultSchema = z.object({
   durationMs: z.number().min(0).max(600000),
 });
 
+/** Advisory, like the timer it reports on — see the enum in the schema. */
+export const submissionTriggerSchema = z.enum(['MANUAL', 'AUTO_DEADLINE']);
+
 export const createSubmissionSchema = z.object({
   interviewId: cuidSchema,
   questionId: cuidSchema,
   language: languageSchema,
   sourceCode: z.string().max(200000),
   results: z.array(testResultSchema).max(100),
+  // Defaulted rather than required: an older client that does not send it is
+  // describing a candidate who pressed Submit, which is what MANUAL means.
+  trigger: submissionTriggerSchema.default('MANUAL'),
 });
 
 export const saveDraftSchema = z.object({

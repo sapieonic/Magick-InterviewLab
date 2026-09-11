@@ -154,11 +154,19 @@ export function DecisionForm({
       </div>
 
       {stillOpen ? (
+        // Deciding and processing stay separate — see the note on
+        // `recordDecisionAction` — but the sentence this replaces sent the
+        // reader off to the pipeline to finish a job that is now offered
+        // directly below, by `CloseOutPanel`, to whoever holds
+        // `MANAGE_PIPELINE`. Pointing at a panel on the same page is not a
+        // softening of the separation: it is still a second, deliberate click,
+        // made by the person answerable for it, logged as its own event.
         <p className="text-muted-foreground text-[12px]">
           Recording a decision does not close the application — it is still{' '}
           {applicationStatus === 'ACTIVE' ? 'active' : 'on hold'}. Deciding and processing are
-          separate jobs, so the recruiter closes it from the pipeline once the offer or the
-          rejection has actually gone out.
+          separate jobs, so closing it is a second, deliberate step, taken by whoever runs the
+          pipeline once the offer or the rejection has actually gone out. If that is you, the
+          close-out sits just below.
         </p>
       ) : null}
     </div>

@@ -14,7 +14,7 @@ import {
   type SubmissionNoteView,
 } from '@/features/feedback/queries';
 import type { SessionUser } from '@/features/auth/session';
-import type { Language } from '@/generated/prisma/enums';
+import type { Language, SubmissionTrigger } from '@/generated/prisma/enums';
 
 /**
  * Read models for submission review.
@@ -92,6 +92,7 @@ export interface SubmissionDetail {
   totalCount: number;
   language: Language;
   sourceCode: string;
+  trigger: SubmissionTrigger;
   submittedAt: Date;
   results: ParsedResults;
   candidate: { id: string; name: string; email: string; isActive: boolean };
@@ -109,6 +110,7 @@ export async function getSubmission(id: string): Promise<SubmissionDetail | null
       totalCount: true,
       language: true,
       sourceCode: true,
+      trigger: true,
       submittedAt: true,
       results: true,
       candidate: { select: { id: true, name: true, email: true, isActive: true } },

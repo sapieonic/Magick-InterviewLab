@@ -27,6 +27,10 @@ import {
   STAGE_REOPEN_TARGET,
   STAGE_STATUS_LABELS,
 } from '@/features/pipeline/stage-status';
+// `review/loop` is deliberately free of `server-only` and Prisma, which is what
+// lets a client component share the one definition of elapsed rather than
+// subtract two dates itself and get the clock-adjustment case wrong.
+import { elapsedMs } from '@/features/review/loop';
 import {
   InterviewerRoleBadge,
   StageOutcomeBadge,
@@ -44,7 +48,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import type { ActionResult } from '@/lib/action-result';
-import { cn, formatDate } from '@/lib/utils';
+import { cn, formatDate, formatDuration } from '@/lib/utils';
 
 /**
  * The rounds on an application: order, schedule, status, outcome and panel.
@@ -67,6 +71,12 @@ export interface PanelMember {
 export interface StageAssignmentInfo {
   id: string;
   interview: { id: string; title: string };
+  /** When the candidate first opened the assessment, and when they answered
+   *  the last question. The read model has carried both all along; the card
+   *  dropped them, so the one round with a clock on it was the only one whose
+   *  dates the console would not show. */
+  startedAt: Date | null;
+  completedAt: Date | null;
   submissionCount: number;
   bestScore: number | null;
   lastSubmittedAt: Date | null;
@@ -294,26 +304,50 @@ export function StageList({
             </div>
 
             {stage.assignment ? (
-              <div className="bg-muted/40 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-md px-2.5 py-1.5 text-[12px]">
-                <FileCode2 className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
-                <span className="min-w-0 truncate font-medium">
-                  {stage.assignment.interview.title}
-                </span>
-                <span className="text-muted-foreground tabular-nums">
-                  {stage.assignment.submissionCount}{' '}
-                  {stage.assignment.submissionCount === 1 ? 'submission' : 'submissions'}
-                  {stage.assignment.bestScore === null
-                    ? ''
-                    : ` · best ${stage.assignment.bestScore}%`}
-                </span>
-                {canReviewSubmissions ? (
-                  <Link
-                    href={`/admin/submissions?interviewId=${stage.assignment.interview.id}`}
-                    className="hover:text-primary ml-auto transition-colors"
-                  >
-                    Review submissions
-                  </Link>
-                ) : null}
+              <div className="bg-muted/40 space-y-1 rounded-md px-2.5 py-1.5 text-[12px]">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <FileCode2 className="text-muted-foreground size-3.5 shrink-0" aria-hidden />
+                  <span className="min-w-0 truncate font-medium">
+                    {stage.assignment.interview.title}
+                  </span>
+                  <span className="text-muted-foreground tabular-nums">
+                    {stage.assignment.submissionCount}{' '}
+                    {stage.assignment.submissionCount === 1 ? 'submission' : 'submissions'}
+                    {stage.assignment.bestScore === null
+                      ? ''
+                      : ` · best ${stage.assignment.bestScore}%`}
+                  </span>
+                  {canReviewSubmissions ? (
+                    <Link
+                      href={`/admin/submissions?interviewId=${stage.assignment.interview.id}`}
+                      className="hover:text-primary ml-auto transition-colors"
+                    >
+                      Review submissions
+                    </Link>
+                  ) : null}
+                </div>
+
+                {/*
+                  Elapsed is a plain fact in the same weight as the two stamps
+                  either side of it: no badge, no threshold, no colour. Fast is
+                  not good — a candidate who finished in forty minutes may have
+                  read the brief carefully or may have given up — and a duration
+                  styled as a comparator stops being a weak metric and becomes an
+                  accommodation problem, because extra time is an adjustment
+                  people are legally entitled to and it lands squarely in this
+                  number. The `title` says what the clock actually measures, so
+                  nobody has to guess whether breaks are in it.
+                */}
+                <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 tabular-nums">
+                  <span>Started {formatDate(stage.assignment.startedAt)}</span>
+                  <span>Completed {formatDate(stage.assignment.completedAt)}</span>
+                  <span title="Wall clock between first opening the assessment and answering the last question. Breaks are included.">
+                    Elapsed{' '}
+                    {formatDuration(
+                      elapsedMs(stage.assignment.startedAt, stage.assignment.completedAt),
+                    )}
+                  </span>
+                </div>
               </div>
             ) : stage.type === 'CODING_ASSESSMENT' && editable ? (
               <LinkAssessmentForm

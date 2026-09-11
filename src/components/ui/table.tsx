@@ -17,11 +17,18 @@ export function TableHeader({ className, ...props }: React.ComponentProps<'thead
 export function TableBody({ className, ...props }: React.ComponentProps<'tbody'>) {
   return <tbody className={cn('[&_tr:last-child]:border-0', className)} {...props} />;
 }
-export function TableRow({ className, ...props }: React.ComponentProps<'tr'>) {
-  return (
-    <tr className={cn('hover:bg-muted/40 border-b transition-colors', className)} {...props} />
-  );
-}
+/** Forwards its ref: the review queue moves keyboard focus row to row. */
+export const TableRow = React.forwardRef<HTMLTableRowElement, React.ComponentProps<'tr'>>(
+  function TableRow({ className, ...props }, ref) {
+    return (
+      <tr
+        ref={ref}
+        className={cn('hover:bg-muted/40 border-b transition-colors', className)}
+        {...props}
+      />
+    );
+  },
+);
 export function TableHead({ className, ...props }: React.ComponentProps<'th'>) {
   return (
     <th
