@@ -46,6 +46,24 @@ enum AssignmentStatus {
   COMPLETED
 }
 
+/// How a submission came to exist.
+///
+/// The workspace snapshots whatever is in the editor when a timed interview's
+/// clock hits zero, and until this column existed that snapshot was
+/// indistinguishable from a deliberate final answer. A reviewer seeing 1/4
+/// tests passing read it as the candidate's judgement rather than as where
+/// they happened to be standing when time ran out.
+///
+/// Advisory, like the timer itself: browser execution cannot enforce a
+/// deadline, so this records what the client said it was doing. See the note
+/// on `TestCase.isHidden` for the same caveat about the same reason.
+enum SubmissionTrigger {
+  /// The candidate pressed Submit.
+  MANUAL
+  /// The workspace submitted the current buffer when the timer expired.
+  AUTO_DEADLINE
+}
+
 /// A person who can sign in. Admins are bootstrapped from env; candidates are
 /// created by an admin with an explicitly chosen temporary password.
 model User {
@@ -214,8 +232,10 @@ model Submission {
   passedCount Int      @default(0)
   totalCount  Int      @default(0)
   /// Serialized TestResult[] plus stdout/stderr summary.
-  results     Json     @default("{}")
-  submittedAt DateTime @default(now())
+  results     Json              @default("{}")
+  /// Whether the candidate submitted this or the deadline did. See the enum.
+  trigger     SubmissionTrigger @default(MANUAL)
+  submittedAt DateTime          @default(now())
 
   candidate User             @relation(fields: [candidateId], references: [id], onDelete: Cascade)
   interview Interview        @relation(fields: [interviewId], references: [id], onDelete: Cascade)

@@ -6,6 +6,7 @@ import { AlertTriangle, CheckCircle2, ChevronRight, Timer, XCircle } from 'lucid
 import { getSubmissionForReview, type StoredTestResult } from '../queries';
 import { PageHeader, Section } from '@/components/admin/page-header';
 import { LanguageBadge, ScoreBadge } from '@/components/admin/badges';
+import { Badge } from '@/components/ui/badge';
 import { CodeBlock, OutputBlock } from '@/components/admin/code-block';
 import { SubmissionNotes } from '@/components/admin/submission-notes';
 import { Alert } from '@/components/ui/alert';
@@ -118,6 +119,17 @@ export default async function SubmissionDetailPage({ params }: PageProps) {
             </Link>
             <LanguageBadge language={submission.language} />
             <span>{formatDate(submission.submittedAt)}</span>
+            {/* Without this, a snapshot the timer took of half-finished work is
+                indistinguishable from a deliberate final answer — and a
+                reviewer reads 1/4 tests as the candidate's judgement. */}
+            {submission.trigger === 'AUTO_DEADLINE' ? (
+              <Badge
+                variant="outline"
+                title="The workspace submitted whatever was in the editor when the timer reached zero. The candidate did not choose to stop here."
+              >
+                Auto-submitted at deadline
+              </Badge>
+            ) : null}
           </span>
         }
         actions={
@@ -231,6 +243,12 @@ export default async function SubmissionDetailPage({ params }: PageProps) {
               <div className="flex items-center justify-between gap-2">
                 <dt className="text-muted-foreground">Submitted</dt>
                 <dd className="text-right">{formatDate(submission.submittedAt)}</dd>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <dt className="text-muted-foreground">Submitted by</dt>
+                <dd className="text-right">
+                  {submission.trigger === 'AUTO_DEADLINE' ? 'the deadline' : 'the candidate'}
+                </dd>
               </div>
             </dl>
           </Section>

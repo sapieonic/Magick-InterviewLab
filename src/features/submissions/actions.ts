@@ -72,6 +72,7 @@ export async function createSubmissionAction(input: {
   language: string;
   sourceCode: string;
   results: unknown[];
+  trigger?: string;
 }): Promise<ActionResult<CreateSubmissionResult>> {
   return actionGuard(async () => {
     const candidate = await requireCandidate();
@@ -180,6 +181,7 @@ export async function createSubmissionAction(input: {
         questionId: parsed.questionId,
         language: parsed.language,
         sourceCode: parsed.sourceCode,
+        trigger: parsed.trigger,
         score: breakdown.score,
         passedCount: breakdown.passed,
         totalCount: breakdown.total,

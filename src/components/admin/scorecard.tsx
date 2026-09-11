@@ -57,7 +57,7 @@ export function EvidenceNotice() {
   );
 }
 
-function DistributionBar({
+export function DistributionBar({
   buckets,
   total,
 }: {

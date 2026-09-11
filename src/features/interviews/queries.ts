@@ -1,5 +1,11 @@
 import 'server-only';
 import { prisma } from '@/lib/db/prisma';
+import {
+  elapsedMs,
+  rollUpSubmissions,
+  type RollUpSubmission,
+  type SubmissionRollUp,
+} from '@/features/review/loop';
 import type { AssignmentStatus, Difficulty, InterviewStatus } from '@/generated/prisma/enums';
 
 export interface InterviewListRow {
@@ -51,7 +57,26 @@ export interface InterviewAssignedCandidate {
   assignmentId: string;
   status: AssignmentStatus;
   createdAt: Date;
+  startedAt: Date | null;
+  completedAt: Date | null;
+  /** Wall clock between the two stamps above, or null until the sitting has
+   *  both started and finished. Computed here, once, so the page cannot
+   *  subtract two dates and reach a different answer from the review queue. */
+  elapsedMs: number | null;
   candidate: { id: string; name: string; email: string; isActive: boolean };
+  /**
+   * The candidate's final answer per question, rolled up.
+   *
+   * `latest` rather than `best`, which is the same choice the review queue
+   * defaults to: the last thing they left behind is the answer, and taking the
+   * high-water mark would hide a regression — a candidate whose final edit
+   * broke a passing test would read as their best attempt forever.
+   *
+   * Empty for anyone who has not submitted, and empty means `score: null`
+   * rather than zero. Nobody who has not sat the assessment gets a percentage
+   * printed against their name.
+   */
+  rollUp: SubmissionRollUp;
 }
 
 export interface InterviewDetail {
@@ -102,6 +127,10 @@ export async function getInterview(id: string): Promise<InterviewDetail | null> 
           id: true,
           status: true,
           createdAt: true,
+          // The assessment's own clock. `status` alone says a sitting finished
+          // and never says when, or how long it took.
+          startedAt: true,
+          completedAt: true,
           candidate: { select: { id: true, name: true, email: true, isActive: true } },
         },
       },
@@ -109,6 +138,11 @@ export async function getInterview(id: string): Promise<InterviewDetail | null> 
   });
 
   if (!row) return null;
+
+  const submissionsByCandidate = await loadSubmissions(
+    id,
+    row.assignments.map((a) => a.candidate.id),
+  );
 
   return {
     id: row.id,
@@ -134,9 +168,57 @@ export async function getInterview(id: string): Promise<InterviewDetail | null> 
       assignmentId: a.id,
       status: a.status,
       createdAt: a.createdAt,
+      startedAt: a.startedAt,
+      completedAt: a.completedAt,
+      elapsedMs: elapsedMs(a.startedAt, a.completedAt),
       candidate: a.candidate,
+      rollUp: rollUpSubmissions(submissionsByCandidate.get(a.candidate.id) ?? [], 'latest'),
     })),
   };
+}
+
+/**
+ * Every assigned candidate's attempts at this interview, in one query.
+ *
+ * One `IN` over the candidate ids rather than a query per row — the same
+ * batching `summariseSubmissions` in `pipeline/queries.ts` and
+ * `loadAutomatedRuns` in the scorecard read model use. A page that fans out per
+ * candidate is fine with four of them and is a hundred round trips on the
+ * cohort this screen exists to show.
+ *
+ * Scoped by `interviewId` as well, so a candidate who also sat three other
+ * assessments contributes only the attempts this page is about.
+ */
+async function loadSubmissions(
+  interviewId: string,
+  candidateIds: readonly string[],
+): Promise<Map<string, RollUpSubmission[]>> {
+  const out = new Map<string, RollUpSubmission[]>();
+  if (candidateIds.length === 0) return out;
+
+  const rows = await prisma.submission.findMany({
+    where: { interviewId, candidateId: { in: [...new Set(candidateIds)] } },
+    orderBy: { submittedAt: 'asc' },
+    // Never `sourceCode` and never `results`: this is a roster, and the code
+    // behind a row is a screen of its own with its own access check.
+    select: {
+      candidateId: true,
+      questionId: true,
+      score: true,
+      passedCount: true,
+      totalCount: true,
+      submittedAt: true,
+      trigger: true,
+      language: true,
+    },
+  });
+
+  for (const row of rows) {
+    const bucket = out.get(row.candidateId) ?? [];
+    bucket.push(row);
+    out.set(row.candidateId, bucket);
+  }
+  return out;
 }
 
 /** Everything an admin can drop into an interview, minus what is already in it. */

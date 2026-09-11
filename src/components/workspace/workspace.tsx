@@ -31,6 +31,7 @@ import { describeLastAttempt, isAlreadySubmitted } from './already-submitted';
 import { TimerChip, useCountdown } from './interview-timer';
 import { IDLE_RUN, runMatches, type RunState } from './run-state';
 import { shouldAutoSubmit } from './auto-submit';
+import type { SubmissionTrigger } from '@/generated/prisma/enums';
 import { readRunCache, writeRunCache } from './run-cache';
 import { useOnlineStatus } from './use-online-status';
 import {
@@ -437,7 +438,11 @@ export function Workspace({ data }: { data: WorkspaceData }) {
   // Returns whether the submission was recorded, so the auto-submit path can
   // tell the candidate when a deadline submit did not go through (its dialog is
   // closed, so `submitError` alone would be invisible).
-  const handleSubmit = async (): Promise<boolean> => {
+  // The trigger is the client's claim about *why* this submission exists, and
+  // it is the only place that knows: by the time the action runs, a deadline
+  // snapshot and a deliberate answer are the same request. Advisory for the
+  // same reason the countdown is — see `SubmissionTrigger` in the schema.
+  const handleSubmit = async (trigger: SubmissionTrigger = 'MANUAL'): Promise<boolean> => {
     setSubmitError(null);
     setSubmitting(true);
     try {
@@ -461,6 +466,7 @@ export function Workspace({ data }: { data: WorkspaceData }) {
         language: toDbLanguage(language),
         sourceCode: clip(source, MAX_SOURCE),
         results: toResultPayload(execution?.tests ?? []),
+        trigger,
       });
 
       if (!response.ok) {
@@ -538,7 +544,7 @@ export function Workspace({ data }: { data: WorkspaceData }) {
     ) {
       autoSubmittedRef.current = true;
       toast('Time is up — submitting your current work.');
-      void handleSubmitRef.current().then((ok) => {
+      void handleSubmitRef.current('AUTO_DEADLINE').then((ok) => {
         if (!ok) {
           // The dialog is closed, so its inline error is invisible — tell the
           // candidate here, and let them retry manually.

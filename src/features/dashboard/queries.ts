@@ -1,5 +1,6 @@
 import 'server-only';
 import { prisma } from '@/lib/db/prisma';
+import { ELIGIBLE_CODING_STAGE } from '@/features/review/queries';
 import { can } from '@/features/auth/capabilities';
 import { visibleApplicationsWhere } from '@/features/pipeline/access';
 import {
@@ -58,8 +59,31 @@ function effectiveStageStatus(stage: {
 }
 
 /** Only open work is a task. A closed application's unwritten scorecard is
- *  history, and this is the restriction both feedback queues already apply. */
+ *  history, and this is the restriction both feedback queues already apply.
+ *
+ *  It is also the exact complement of the review loop's `CLOSED` step, which is
+ *  HIRED, REJECTED or WITHDRAWN — so the two tiles below can lean on it to mean
+ *  "not closed" as well as "still work". */
 const OPEN_APPLICATION: Prisma.ApplicationWhereInput = { status: { in: ['ACTIVE', 'ON_HOLD'] } };
+
+/**
+ * The finished coding round that makes an application reviewable at all.
+ *
+ * Mirrors `ELIGIBLE_CODING_STAGE` in `features/review/queries.ts`, which is
+ * private to that module. Both tiles that link at the review queue have to
+ * carry it: the queue is a list of people who have *sat an assessment*, so a
+ * count taken over every application would promise rows the destination does
+ * not hold, and the tile would be wrong in the one way this file refuses to be.
+ * If that constant moves, move this with it.
+ *
+ * Two ways in, because a round can finish without the machinery noticing: the
+ * assignment reports `COMPLETED`, or a person marked the round resolved. The
+ * queue then narrows the second case once more in memory — a round somebody
+ * marked complete with no submissions behind it has nothing to review — which
+ * no `where` can express. That is the single direction these numbers can part,
+ * and it can only ever make the queue shorter than the tile, never longer.
+ */
+const REVIEWABLE_CODING_STAGE = ELIGIBLE_CODING_STAGE;
 
 /**
  * Rounds where *this viewer* still owes a scorecard.
@@ -159,17 +183,49 @@ export async function getDashboardTiles(viewer: SessionUser): Promise<DashboardT
   }
 
   if (can(viewer.role, 'VIEW_ALL_APPLICATIONS')) {
-    const [active, awaitingFeedback, awaitingDecision] = await Promise.all([
+    const [active, awaitingFeedback, awaitingDecision, awaitingCloseout] = await Promise.all([
       prisma.application.count({ where: { status: 'ACTIVE' } }),
       countRoundsAwaitingFeedback(),
-      // Every round settled, nothing skipped mid-flight, and still no call
-      // made. This is the queue a debrief exists to drain, and it is invisible
-      // anywhere else in the product.
+      // `READY` from `features/review/loop.ts`, expressed as a `where`: open,
+      // no decision, every round settled — and a finished assessment, because
+      // that is the set the queue lists from.
+      //
+      // Open rather than ACTIVE alone, which is where this number used to be
+      // narrower than its own destination: `CLOSED` outranks `READY` only for
+      // HIRED, REJECTED and WITHDRAWN, so an application parked ON_HOLD with
+      // every round settled is a `READY` row in the queue and belongs here too.
+      //
+      // Counting the *stored* stage status is safe even though the queue works
+      // off the derived one: `deriveCodingStageStatus` returns COMPLETE or
+      // SKIPPED only when the stored value already said so, so "every round
+      // resolved" cannot differ between the two.
       prisma.application.count({
         where: {
-          status: 'ACTIVE',
+          ...OPEN_APPLICATION,
           decision: null,
-          stages: { some: {}, every: { status: { in: ['COMPLETE', 'SKIPPED'] } } },
+          stages: {
+            some: REVIEWABLE_CODING_STAGE,
+            every: { status: { in: ['COMPLETE', 'SKIPPED'] } },
+          },
+        },
+      }),
+      // `CLOSEOUT`: a decision exists and the application is still open.
+      //
+      // Recording a decision deliberately does not move `Application.status` —
+      // see the module comment on `features/decisions/actions.ts`, where
+      // closing the application is kept as the recruiter's separate
+      // accountability. The cost of that split was that a decided application
+      // appeared in no list at all: off the "ready to decide" queue the moment
+      // the call was made, and off nobody's desk until someone remembered it.
+      // This is the number that remembers.
+      //
+      // No condition on the rounds, because `CLOSEOUT` outranks `READY`: a
+      // decision made before the last round finished still needs closing out.
+      prisma.application.count({
+        where: {
+          ...OPEN_APPLICATION,
+          decision: { isNot: null },
+          stages: { some: REVIEWABLE_CODING_STAGE },
         },
       }),
     ]);
@@ -196,11 +252,19 @@ export async function getDashboardTiles(viewer: SessionUser): Promise<DashboardT
         label: 'Ready to decide',
         value: awaitingDecision,
         hint: 'Every round settled, no decision recorded',
-        // The board has no "settled but undecided" filter, so this lands on the
-        // closest one it does support and the count stays a strict subset of
-        // what appears. Worth a real filter if anyone asks twice.
-        href: '/admin/pipeline?status=ACTIVE',
+        // The queue is a screen now. This lands on the exact bucket the number
+        // counts rather than the nearest filter the board happened to support,
+        // so the rows are the rows.
+        href: '/admin/review?loop=READY',
         urgent: awaitingDecision > 0,
+      },
+      {
+        key: 'awaiting-closeout',
+        label: 'Decided — to close out',
+        value: awaitingCloseout,
+        hint: 'A decision is recorded and the application is still open',
+        href: '/admin/review?loop=CLOSEOUT',
+        urgent: awaitingCloseout > 0,
       },
     );
   }

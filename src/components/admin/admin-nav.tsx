@@ -18,6 +18,15 @@ interface NavLink {
 const LINKS: readonly NavLink[] = [
   { href: '/admin', label: 'Dashboard', exact: true },
   { href: '/admin/pipeline', label: 'Pipeline', exact: false },
+  // Between the board and the panel's own queue, because that is where it sits
+  // in the day: the board is what is running, Review is what has finished and
+  // is waiting on a person.
+  {
+    href: '/admin/review',
+    label: 'Review',
+    exact: false,
+    capability: 'VIEW_ALL_APPLICATIONS',
+  },
   { href: '/admin/feedback', label: 'My feedback', exact: false, capability: 'GIVE_FEEDBACK' },
   { href: '/admin/candidates', label: 'Candidates', exact: false, capability: 'MANAGE_USERS' },
   { href: '/admin/interviews', label: 'Interviews', exact: false, capability: 'MANAGE_CONTENT' },
