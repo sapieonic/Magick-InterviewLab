@@ -5,7 +5,14 @@
  * from stdin and prints to stdout. Keeping the samples in that shape means a
  * new admin can copy one as a template and get a working question.
  */
-import type { Difficulty, Language } from '../src/generated/prisma/enums.js';
+import type {
+  Difficulty,
+  Language,
+  Role,
+  StageOutcome,
+  StageStatus,
+  StageType,
+} from '../src/generated/prisma/enums.js';
 
 interface SeedTestCase {
   input: string;
@@ -232,3 +239,177 @@ print(find_duplicate(nums))
     ],
   },
 ];
+
+// ---------------------------------------------------------------------------
+// Hiring pipeline
+//
+// Enough of a process to walk the board, an application and a scorecard
+// without inventing one by hand. Nothing here carries a credential: staff
+// passwords come from the environment or are generated and printed once by
+// `seed.ts`, exactly as the sample candidate's does.
+// ---------------------------------------------------------------------------
+
+interface SeedStaff {
+  /** Default address; `SEED_STAFF_DOMAIN` overrides the domain half. */
+  email: string;
+  name: string;
+  role: Role;
+}
+
+export const SAMPLE_STAFF = {
+  recruiter: {
+    email: 'recruiter@magicvoice.local',
+    name: 'Priya Raman',
+    role: 'RECRUITER',
+  },
+  hiringManager: {
+    email: 'hiring.manager@magicvoice.local',
+    name: 'Tom Okafor',
+    role: 'HIRING_MANAGER',
+  },
+  interviewer: {
+    email: 'interviewer@magicvoice.local',
+    name: 'Lena Fischer',
+    role: 'INTERVIEWER',
+  },
+} as const satisfies Record<string, SeedStaff>;
+
+export const SAMPLE_JOB_ROLE = {
+  title: 'Backend Engineer',
+  level: 'L4',
+  description:
+    'Owns a service end to end: designs it, ships it and carries the pager for it. ' +
+    'Evaluated on judgement under ambiguity as much as on code.',
+};
+
+export const SAMPLE_PIPELINE_TEMPLATE = {
+  name: 'Backend hiring loop',
+  description:
+    'Four rounds: a machine-graded assessment to establish a floor, then three ' +
+    'conversations that each look at something the others cannot see.',
+};
+
+interface SeedStageTemplate {
+  name: string;
+  type: StageType;
+  isRequired: boolean;
+}
+
+/**
+ * The assessment comes first deliberately — it is the cheapest round for both
+ * sides, and a loop that spends four people's afternoons before anyone has
+ * seen the candidate write code is a loop that wastes them.
+ */
+export const SAMPLE_PIPELINE_STAGES: SeedStageTemplate[] = [
+  { name: 'Coding assessment', type: 'CODING_ASSESSMENT', isRequired: true },
+  { name: 'Technical screen', type: 'LIVE_CODING', isRequired: true },
+  { name: 'System design', type: 'SYSTEM_DESIGN', isRequired: true },
+  { name: 'Hiring manager', type: 'HIRING_MANAGER', isRequired: true },
+];
+
+/** Where the demo application sits: the assessment is done and advanced, the
+ *  screen has happened and is waiting on its scorecards, the rest are ahead. */
+export const SAMPLE_APPLICATION_PROGRESS: ReadonlyArray<{
+  status: StageStatus;
+  outcome: StageOutcome | null;
+  /** Days ago the round was scheduled; null for rounds not yet booked. */
+  scheduledDaysAgo: number | null;
+}> = [
+  { status: 'COMPLETE', outcome: 'ADVANCE', scheduledDaysAgo: 12 },
+  { status: 'AWAITING_FEEDBACK', outcome: null, scheduledDaysAgo: 3 },
+  { status: 'PENDING', outcome: null, scheduledDaysAgo: null },
+  { status: 'PENDING', outcome: null, scheduledDaysAgo: null },
+];
+
+/**
+ * The rubric the demo pipeline scores against.
+ *
+ * Seeded rather than left to a human because without it the entire rubric half
+ * of the product — versioned criteria, weighted normalisation, the per-criterion
+ * table on the debrief — cannot be reached on a fresh install: a stage with no
+ * pinned version simply reports that it has nothing to score against.
+ *
+ * Weights are deliberately unequal and `maxScore` is deliberately not uniform,
+ * so the normalisation across differing scales is exercised by the demo rather
+ * than only by unit tests.
+ */
+export const SAMPLE_RUBRIC = {
+  name: 'Engineering interview',
+  description:
+    'The default instrument for engineering rounds. Score against what the ' +
+    'candidate demonstrated in this round, not against their CV.',
+  criteria: [
+    {
+      name: 'Problem solving',
+      description:
+        'Breaks an ambiguous problem down, chooses an approach for stated reasons, ' +
+        'and notices when it is not working.',
+      weight: 3,
+      maxScore: 4,
+    },
+    {
+      name: 'Code quality',
+      description: 'Readable, correct, and structured so the next person can change it.',
+      weight: 2,
+      maxScore: 4,
+    },
+    {
+      name: 'Communication',
+      description:
+        'Thinks out loud, takes a hint, and disagrees clearly when they think you are wrong.',
+      weight: 2,
+      maxScore: 4,
+    },
+    {
+      name: 'Testing instinct',
+      description: 'Reaches for edge cases unprompted rather than when asked.',
+      weight: 1,
+      // A different scale on purpose — see the note above.
+      maxScore: 5,
+    },
+  ],
+} as const;
+
+/**
+ * One submitted scorecard on the round that is awaiting feedback.
+ *
+ * Exactly one, not two: the point of the demo is that the second panellist
+ * opens the round and is told that a scorecard is hidden until they submit
+ * their own. Seeding both would show the blind rule's *result* and hide the
+ * rule itself.
+ */
+export const SAMPLE_FEEDBACK = {
+  stageName: 'Technical screen',
+  recommendation: 'LEAN_HIRE',
+  confidence: 'MEDIUM',
+  summary:
+    'Solid on the core problem — got to a working solution without hints and ' +
+    'explained the trade-off between the two approaches unprompted. Slower on ' +
+    'the follow-up, and needed a nudge to spot the empty-input case.',
+  strengths:
+    'Clear reasoning out loud. Chose the hash-map approach for a stated reason ' +
+    'rather than by reflex, and could say what it cost in memory.',
+  concerns:
+    'Did not test the empty input until prompted. I would want to see how they ' +
+    'handle a larger codebase before calling this a clear hire.',
+  /** Keyed by criterion name so a reordering of the rubric cannot silently
+   *  reassign the scores. */
+  scores: {
+    'Problem solving': { score: 3, note: 'Reached a working solution unaided.' },
+    'Code quality': { score: 3, note: 'Readable; naming drifted under time pressure.' },
+    Communication: { score: 4, note: 'Genuinely good — disagreed with me once, correctly.' },
+    'Testing instinct': { score: 2, note: 'Prompted, not spontaneous.' },
+  },
+} as const;
+
+/** The code the demo candidate "submitted". Deliberately imperfect — it fails
+ *  the last test case, so the review screen shows a real failure. */
+export const SAMPLE_SUBMISSION_SOURCE = `const lines = require('fs').readFileSync(0, 'utf8').split('\\n');
+
+function reverse(input) {
+  // Splits on code units, so this is wrong for astral-plane characters.
+  return input.split('').reverse().join('');
+}
+
+console.log(reverse(lines[0] ?? ''));
+`;

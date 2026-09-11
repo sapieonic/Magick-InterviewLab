@@ -12,14 +12,17 @@
 
 ---
 
-InterviewLab is a single Next.js application that lets an admin author coding
-questions and test cases, assemble them into interviews, create candidate
-accounts, and review submissions — while candidates solve the questions in a
-browser IDE and run their code **entirely on their own machine**.
+InterviewLab is a single Next.js application that lets a team author coding
+questions and test cases, assemble them into assessments, and run candidates
+through a full interview process — recording what each interviewer thought at
+every round and ending in one explicit, written hire or no-hire.
 
-- **Admin**: dashboard, candidate management, interview management, question
-  authoring with Markdown + live preview, test-case editor, submission review.
-- **Candidate**: assigned interview, Monaco editor, JavaScript and Python
+- **Hiring console**: a pipeline board, applications and their stages, panels,
+  versioned rubrics, blind scorecards, a debrief view and a recorded decision,
+  all on an append-only audit trail.
+- **Authoring**: questions with Markdown + live preview, a test-case editor,
+  assessments assembled from them, and submission review test by test.
+- **Candidate**: assigned assessment, Monaco editor, JavaScript and Python
   execution in the browser, per-test results, explicit submit, scoring.
 - **Zero server-side code execution.** Candidate code never touches the
   Node process, the database, or any secret. See
@@ -31,6 +34,7 @@ browser IDE and run their code **entirely on their own machine**.
 - [Quick start](#quick-start)
 - [Environment variables](#environment-variables)
 - [The end-to-end workflow](#the-end-to-end-workflow)
+- [The hiring pipeline](#the-hiring-pipeline)
 - [Candidate invitation email](#candidate-invitation-email)
 - [Code execution](#code-execution)
 - [Writing a question](#writing-a-question)
@@ -108,29 +112,31 @@ bootstrap is create-only.
 
 Every variable, what it does, and whether it is required.
 
-| Variable                        | Required    | Default                      | Exposed to browser | Purpose                                                                                                                                       |
-| ------------------------------- | ----------- | ---------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                  | **yes**     | —                            | no                 | PostgreSQL connection string.                                                                                                                 |
-| `ADMIN_EMAIL`                   | recommended | —                            | no                 | Bootstrap admin's email. Without it no admin is created.                                                                                      |
-| `ADMIN_PASSWORD_HASH`           | recommended | —                            | no                 | Argon2id hash for the bootstrap admin. Generate with `npm run hash-password`.                                                                 |
-| `ADMIN_PASSWORD`                | no          | —                            | no                 | Plaintext alternative, **development only**; throws in production.                                                                            |
-| `ADMIN_NAME`                    | no          | `MagicVoice Admin`           | no                 | Display name for the bootstrap admin.                                                                                                         |
-| `SESSION_TTL_HOURS`             | no          | `12`                         | no                 | Session lifetime.                                                                                                                             |
-| `COOKIE_SECURE`                 | no          | auto                         | no                 | Force the `Secure` cookie flag. Defaults to on when `NODE_ENV=production`. Set `true` when TLS terminates upstream in a non-production build. |
-| `SEED_CANDIDATE_EMAIL`          | no          | `candidate@magicvoice.local` | no                 | Email for the seeded demo candidate.                                                                                                          |
-| `SEED_CANDIDATE_PASSWORD`       | no          | random                       | no                 | Password for the seeded candidate. If unset, one is generated and printed once.                                                               |
-| `SEED_DEMO_DATA`                | no          | `true`                       | no                 | Set `false` to seed only the admin.                                                                                                           |
-| `MAILJET_API_KEY`               | no          | —                            | no                 | Mailjet API key. Enables candidate invitation email. Required alongside the secret and sender.                                                |
-| `MAILJET_API_SECRET`            | no          | —                            | no                 | Mailjet API secret.                                                                                                                           |
-| `MAIL_FROM_EMAIL`               | no          | —                            | no                 | Sender address. Must be a Mailjet verified sender or verified domain.                                                                         |
-| `MAIL_FROM_NAME`                | no          | `<app name> InterviewLab`    | no                 | Display name on the `From` header. Defaults from `NEXT_PUBLIC_APP_NAME`.                                                                      |
-| `MAIL_REPLY_TO`                 | no          | —                            | no                 | `Reply-To` address, when replies should not go to the sender.                                                                                 |
-| `MAILJET_SANDBOX`               | no          | `false`                      | no                 | `true` makes Mailjet validate every message and deliver nothing.                                                                              |
-| `NEXT_PUBLIC_APP_NAME`          | no          | `MagicVoice`                 | **yes**            | Brand name in the UI.                                                                                                                         |
-| `NEXT_PUBLIC_APP_URL`           | no          | `http://localhost:3000`      | **yes**            | Canonical URL. **Required (and must not be loopback) once email is enabled** — every invitation links to it.                                  |
-| `NEXT_PUBLIC_PYODIDE_INDEX_URL` | no          | jsDelivr CDN                 | **yes**            | Where the Python (Pyodide) runtime is fetched from. Point at your own host to run air-gapped.                                                 |
-| `PORT`                          | no          | `3000`                       | no                 | Server port.                                                                                                                                  |
-| `RUN_MIGRATIONS`                | no          | `true`                       | no                 | Docker entrypoint only: run `prisma migrate deploy` on container start.                                                                       |
+| Variable                        | Required    | Default                      | Exposed to browser | Purpose                                                                                                                                                         |
+| ------------------------------- | ----------- | ---------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                  | **yes**     | —                            | no                 | PostgreSQL connection string.                                                                                                                                   |
+| `ADMIN_EMAIL`                   | recommended | —                            | no                 | Bootstrap admin's email. Without it no admin is created.                                                                                                        |
+| `ADMIN_PASSWORD_HASH`           | recommended | —                            | no                 | Argon2id hash for the bootstrap admin. Generate with `npm run hash-password`.                                                                                   |
+| `ADMIN_PASSWORD`                | no          | —                            | no                 | Plaintext alternative, **development only**; throws in production.                                                                                              |
+| `ADMIN_NAME`                    | no          | `MagicVoice Admin`           | no                 | Display name for the bootstrap admin.                                                                                                                           |
+| `SESSION_TTL_HOURS`             | no          | `12`                         | no                 | Session lifetime.                                                                                                                                               |
+| `COOKIE_SECURE`                 | no          | auto                         | no                 | Force the `Secure` cookie flag. Defaults to on when `NODE_ENV=production`. Set `true` when TLS terminates upstream in a non-production build.                   |
+| `SEED_CANDIDATE_EMAIL`          | no          | `candidate@magicvoice.local` | no                 | Email for the seeded demo candidate.                                                                                                                            |
+| `SEED_CANDIDATE_PASSWORD`       | no          | random                       | no                 | Password for the seeded candidate. If unset, one is generated and printed once.                                                                                 |
+| `SEED_SPARE_CANDIDATE_EMAIL`    | no          | `applicant@magicvoice.local` | no                 | A second candidate with nothing attached, so the "start an application" picker is not empty.                                                                    |
+| `SEED_STAFF_PASSWORD`           | no          | random                       | no                 | Shared by the seeded recruiter, hiring manager and interviewer. If unset, three separate passwords are generated and printed — fine on a laptop, useless in CI. |
+| `SEED_DEMO_DATA`                | no          | `true`                       | no                 | Set `false` to seed only the admin. Otherwise the seed also creates the staff accounts, rubric, job role, pipeline template and the demo application.           |
+| `MAILJET_API_KEY`               | no          | —                            | no                 | Mailjet API key. Enables candidate invitation email. Required alongside the secret and sender.                                                                  |
+| `MAILJET_API_SECRET`            | no          | —                            | no                 | Mailjet API secret.                                                                                                                                             |
+| `MAIL_FROM_EMAIL`               | no          | —                            | no                 | Sender address. Must be a Mailjet verified sender or verified domain.                                                                                           |
+| `MAIL_FROM_NAME`                | no          | `<app name> InterviewLab`    | no                 | Display name on the `From` header. Defaults from `NEXT_PUBLIC_APP_NAME`.                                                                                        |
+| `MAIL_REPLY_TO`                 | no          | —                            | no                 | `Reply-To` address, when replies should not go to the sender.                                                                                                   |
+| `MAILJET_SANDBOX`               | no          | `false`                      | no                 | `true` makes Mailjet validate every message and deliver nothing.                                                                                                |
+| `NEXT_PUBLIC_APP_NAME`          | no          | `MagicVoice`                 | **yes**            | Brand name in the UI.                                                                                                                                           |
+| `NEXT_PUBLIC_APP_URL`           | no          | `http://localhost:3000`      | **yes**            | Canonical URL. **Required (and must not be loopback) once email is enabled** — every invitation links to it.                                                    |
+| `NEXT_PUBLIC_PYODIDE_INDEX_URL` | no          | jsDelivr CDN                 | **yes**            | Where the Python (Pyodide) runtime is fetched from. Point at your own host to run air-gapped.                                                                   |
+| `PORT`                          | no          | `3000`                       | no                 | Server port.                                                                                                                                                    |
+| `RUN_MIGRATIONS`                | no          | `true`                       | no                 | Docker entrypoint only: run `prisma migrate deploy` on container start.                                                                                         |
 
 Only `NEXT_PUBLIC_*` variables reach the browser. This is enforced structurally,
 not by convention: `src/lib/env.server.ts` imports `server-only`, so importing
@@ -161,6 +167,151 @@ This is the flow the product is built around, and the one the
 13. Admin reviews the submission, its score and its per-test breakdown.
 
 The seed puts steps 2–7 in place already so you can jump straight to step 8.
+
+---
+
+## The hiring pipeline
+
+An **interview** in the sense above is a _coding assessment_: a set of
+questions, machine graded. Everything in this section is the hiring process
+that assessment sits inside — the rounds a candidate moves through, the human
+judgement recorded at each one, and the single explicit decision at the end.
+
+### The shape of it
+
+| Thing                                          | What it is                                                                                                                                                                                                 |
+| ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Application`                                  | A candidate's run at a role. **This**, not the assessment, is what moves through the process and what a decision is made about.                                                                            |
+| `Stage`                                        | One round on one application. A `CODING_ASSESSMENT` stage is backed by an `InterviewAssignment`; every other type is a round a human runs however they like, where this platform holds only the scorecard. |
+| `StageInterviewer`                             | Who is on the panel. Being on this list — not a role — is what authorizes writing that round's scorecard.                                                                                                  |
+| `Rubric` → `RubricVersion` → `RubricCriterion` | The scoring instrument. Criteria live on a _version_ so a published rubric is immutable once anything has been scored against it.                                                                          |
+| `Feedback` + `FeedbackScore`                   | One interviewer's scorecard for one round: rubric scores, prose, a recommendation and a confidence.                                                                                                        |
+| `FeedbackRevision`                             | The state a submitted scorecard held before an edit. Evidence is never silently rewritten.                                                                                                                 |
+| `Decision`                                     | The hire / no-hire. One per application, with a required written rationale.                                                                                                                                |
+| `AuditEvent`                                   | Append-only record of everything that moves a candidate or records an opinion.                                                                                                                             |
+
+A `PipelineTemplate` materialises a standard set of stages onto an application,
+so "Backend L4" always means the same rounds.
+
+### Four rules the code enforces
+
+These are the whole point of the feature. Each is enforced server-side, and
+each has a test that fails if it stops being true.
+
+**1. Nothing computes a verdict.** Scores and recommendations aggregate into a
+_signal_ — the distribution of recommendations, weighted rubric averages, the
+automated test scores, and an explicit flag when the panel disagrees. A
+`Decision` is written by a person, with a rationale, or it does not exist. This
+is deliberate on two counts: a computed verdict gets gamed and stops being a
+judgement, and automated hiring decisions attract real regulatory exposure
+(NYC LL144-style bias-audit rules, EEOC scrutiny, GDPR Art. 22).
+
+The automated test score is presented as **one input among several**. A test
+pass-rate is not code quality, and once a human has reviewed the round it must
+not be able to overrule them.
+
+**2. Blind until submitted.** An interviewer cannot read anyone else's
+scorecard on a stage until their own is submitted. Four interviewers who read
+each other first produce one opinion and three echoes of it.
+
+This is enforced in the **query layer**, not the page: a read model that
+returns the rows has already leaked them however carefully the UI hides them.
+The rule is a pure function in `src/features/feedback/visibility.ts` and is
+tested exhaustively.
+
+It does not apply to someone who is _not_ on the panel — they are not writing a
+judgement, so there is nothing for them to anchor. A recruiter chasing a late
+panellist and a hiring manager preparing a debrief both need to read what has
+landed. A panellist waits, **including a panellist who happens to be an admin**;
+rank does not make anchoring less likely.
+
+**3. A draft belongs to nobody but its author.** Not to an admin, not to the
+hiring manager, not to the recruiter chasing it. Half-written impressions are
+not evidence, and a system that exposes them teaches people to write their real
+opinion somewhere else.
+
+**4. Submitted feedback is append-only.** A submitted scorecard may be edited,
+but the edit first snapshots the complete prior state into a
+`FeedbackRevision`. A reversal is never invisible — the same applies to a
+`Decision`, where changing one records the previous outcome in the audit log.
+
+### Roles and capabilities
+
+Authorization used to be one equality check — `role !== 'ADMIN'` — because
+there were only two roles. With a panel, a recruiter and a hiring manager in
+the picture, scattering that check is how a system ends up letting an
+interviewer archive an interview. Every permission question now goes through a
+grant table in `src/features/auth/capabilities.ts`.
+
+|                                       | Admin | Recruiter | Hiring manager | Interviewer | Candidate |
+| ------------------------------------- | :---: | :-------: | :------------: | :---------: | :-------: |
+| Reach the console                     |   ●   |     ●     |       ●        |      ●      |           |
+| Manage accounts                       |   ●   |           |                |             |           |
+| Author questions, interviews, rubrics |   ●   |           |                |             |           |
+| Run the pipeline                      |   ●   |     ●     |       ●        |             |           |
+| See every application                 |   ●   |     ●     |       ●        |             |           |
+| Write a scorecard                     |   ●   |     ●     |       ●        |      ●      |           |
+| Record the decision                   |   ●   |           |       ●        |             |           |
+
+Two absences are deliberate. A **recruiter cannot decide**: moving a candidate
+along and choosing to hire them are different accountabilities, and collapsing
+them is how a pipeline stops having a debrief. An **interviewer cannot see
+every application**: they see the candidates they sit on, which is both
+least-privilege and a smaller surface for gossip.
+
+**A capability is necessary, never sufficient.** `GIVE_FEEDBACK` says a role may
+write scorecards at all; it does not say this person is on _this_ panel. An
+admin has the capability and still may not score a round they did not sit in,
+because a scorecard from someone who was not there is not evidence. Object-level
+checks live in `src/features/pipeline/access.ts`.
+
+**A candidate has no capability in the hiring console whatsoever.** Feedback,
+notes and decisions are unreachable by the person they are about — asserted
+directly in the tests rather than left to follow from the routing.
+
+### Running a hire, day to day
+
+| Route                                | Who                                            | What it is for                                                                                                                                               |
+| ------------------------------------ | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/admin`                             | any staff                                      | What needs _you_ — the scorecards you owe, the rounds awaiting feedback, the applications ready to decide — plus the activity feed, read from the audit log. |
+| `/admin/pipeline`                    | any staff                                      | The board. Every application a viewer may see, with its current stage, outstanding scorecards and how long it has been sitting there.                        |
+| `/admin/applications/[id]`           | any staff who can see it                       | The working surface: stages, panel, scheduling, comments and the timeline.                                                                                   |
+| `/admin/stages/[id]`                 | the panel + anyone who can see the application | Where a scorecard is written. For a coding round, the candidate's code and test results sit beside the rubric.                                               |
+| `/admin/applications/[id]/scorecard` | any staff who can see it                       | The debrief. Every submitted scorecard in full, the aggregate signal, and the decision panel for whoever holds `DECIDE`.                                     |
+| `/admin/feedback`                    | any staff                                      | Your outstanding scorecards, oldest first. Feedback rots fast.                                                                                               |
+| `/admin/rubrics`                     | admin                                          | Rubric authoring and version history.                                                                                                                        |
+| `/admin/settings`                    | any staff; each section gated separately       | Job roles, pipeline templates and staff accounts — all admin-only in practice. Staff without those capabilities are told so rather than silently redirected. |
+
+A round of work looks like this:
+
+1. A recruiter opens an application for a candidate against a job role, and
+   applies a pipeline template — which materialises the standard stages and
+   pins each one to the current published version of its rubric.
+2. For a coding round, the stage is backed by an `InterviewAssignment`: the
+   candidate sits the assessment exactly as before, and it is machine graded.
+3. A panel is seated on each stage. Only those people may score it.
+4. Each panellist writes a scorecard — rubric scores with per-criterion notes,
+   a written summary, a recommendation and a confidence. **Save draft** and
+   **Submit** are separate, deliberate acts — a draft is saved when you click
+   it, not automatically, so do not leave a half-written scorecard in a tab
+   overnight. (The candidate's code editor _does_ autosave; the scorecard form
+   does not. See [Future work](#future-work).)
+5. Once a panellist submits, the rest of the panel's scorecards become
+   readable to them, and not before.
+6. A hiring manager opens the debrief, reads the signal alongside the
+   scorecards, and records a decision with a written rationale.
+7. The recruiter closes the application. Every step of this is in the audit log.
+
+### Where the code lives
+
+| Path                                    | What it holds                                                                                      |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `src/features/auth/capabilities.ts`     | The grant table. The authorization specification, asserted exhaustively in tests.                  |
+| `src/features/pipeline/access.ts`       | Object-level access: may this person see _this_ application, and are they on _this_ panel.         |
+| `src/features/feedback/visibility.ts`   | The blind rule, as a pure function.                                                                |
+| `src/features/pipeline/stage-status.ts` | Which stage transitions are legal, and how a coding stage's status is derived from its assignment. |
+| `src/features/scorecard/aggregate.ts`   | Signal, not verdict. No Prisma import, so it is testable in full.                                  |
+| `src/lib/audit.ts`                      | The append-only trail. Writing an event can never fail the thing it records.                       |
 
 ---
 
@@ -387,7 +538,7 @@ Browser                          Server (Next.js)              Postgres
 ┌──────────────────────┐         ┌────────────────────┐       ┌─────────┐
 │ Admin console (RSC)  │◀───────▶│ Server Components  │◀─────▶│ Prisma  │
 │ Candidate workspace  │         │ Server Actions     │       └─────────┘
-│                      │         │  ├ requireAdmin()  │
+│                      │         │  ├ requireCapability│
 │  ┌────────────────┐  │         │  ├ requireCandidate│
 │  │ Monaco editor  │  │         │  └ Zod validation  │
 │  └────────────────┘  │         │ Session (HttpOnly) │
@@ -469,6 +620,42 @@ not trusted to report a score. `scoreSubmission()` takes the authoritative
 client payload. Results for test ids that do not belong to the question are
 discarded rather than counted.
 
+### Nothing computes a hire decision
+
+Scores and recommendations aggregate into a **signal** — a distribution, some
+weighted averages, and a disagreement flag. They never produce a verdict, a
+ranking or a hire probability, and `src/features/scorecard/aggregate.ts` says so
+at the top of the file.
+
+Two reasons. A computed verdict gets optimised against and stops being a
+judgement — panels learn to score for the formula. And automated hiring
+decisions carry real regulatory exposure: NYC Local Law 144 bias audits, EEOC
+adverse-impact scrutiny, GDPR Article 22 rights around solely automated
+decisions. Keeping a person in the loop with a written rationale is both the
+better process and the defensible one.
+
+The automated test score is shown as one input among several for the same
+reason. A test pass-rate is not code quality, and once a human has reviewed the
+round it must not be able to overrule them.
+
+### Feedback is append-only, and editing it leaves a trail
+
+A submitted scorecard can be corrected — people mis-score, and forcing them to
+live with a typo is how you get a second, honest opinion recorded in Slack
+instead. But the correction snapshots the complete prior state into a
+`FeedbackRevision` first, and a changed `Decision` records the previous outcome
+in the audit log.
+
+The test is simple: if a hiring decision were challenged six months later,
+could you reconstruct what each person actually said, when, and what changed?
+
+### Blind feedback is enforced in the query layer
+
+A read model that returns the rows has already leaked them, however carefully
+the page hides them. So `visibleFeedback()` runs inside the query, before
+anything is returned, and the page is handed counts and a reason instead of
+content it must not render.
+
 ### Server Actions rather than a REST API
 
 Mutations are Server Actions wrapped in a single `actionGuard`, which turns
@@ -491,8 +678,9 @@ this application never needs rich option rendering.
 | Password storage    | Argon2id (19 MiB, t=2, p=1 — OWASP baseline). Plaintext is never stored, logged, or returned.                                                                                                                                                                                                                                                                                                                             |
 | Session             | 256-bit opaque token in an `HttpOnly`, `SameSite=Lax`, `Secure`-in-production cookie. Only the SHA-256 is stored.                                                                                                                                                                                                                                                                                                         |
 | Revocation          | Password change, admin reset and deactivation all delete every session for that user.                                                                                                                                                                                                                                                                                                                                     |
-| Authorization       | Enforced in Server Components and in **every** Server Action via `requireAdmin()` / `requireCandidate()`. Hiding a nav item is presentation, never a control.                                                                                                                                                                                                                                                             |
-| Object-level access | A candidate's workspace re-verifies that the assignment is theirs _and_ that the question belongs to that interview. Anything else is a 404, not a 403 — existence does not leak.                                                                                                                                                                                                                                         |
+| Authorization       | A capability grant table (`src/features/auth/capabilities.ts`), asserted in Server Components and in **every** Server Action via `requireCapability()` / `requireCandidate()`. Hiding a nav item is presentation, never a control.                                                                                                                                                                                        |
+| Object-level access | A candidate's workspace re-verifies that the assignment is theirs _and_ that the question belongs to that interview. An interviewer reaches an application only through a panel seat on it, and may write a scorecard only for a stage they sit on — an admin has the capability and still may not. Anything else is a 404, not a 403 — existence does not leak.                                                          |
+| Feedback isolation  | A candidate has **no** capability in the hiring console, so feedback, notes and decisions are unreachable by the person they are about — asserted directly in the tests. A draft scorecard is readable only by its author. A panellist cannot read the rest of the panel until they submit, enforced in the query layer rather than the page.                                                                             |
 | User enumeration    | Login returns one message for unknown-email and wrong-password, and performs a dummy Argon2 verification on the unknown-email path so the timing matches. Account-inactive is only reported _after_ a correct password.                                                                                                                                                                                                   |
 | Open redirect       | `?next=` is honoured only for same-origin absolute paths.                                                                                                                                                                                                                                                                                                                                                                 |
 | Input validation    | Zod at every network boundary, server-side, before any database call.                                                                                                                                                                                                                                                                                                                                                     |
@@ -551,6 +739,23 @@ injected fake worker, and the invitation email — the Mailjet wire contract
 (including that a v3.1 rejection arrives inside a 200), the mail-configuration
 gate, template escaping and mail-client robustness, and that a failed or
 throwing send never costs the admin a created candidate.
+
+The hiring pipeline is tested as a specification rather than by sampling, since
+the rules are the feature:
+
+- Every `(role, capability)` pair in the grant table is named explicitly, so a
+  role quietly gaining `DECIDE` fails a test.
+- The blind rule is asserted across every combination of blind / on-panel /
+  submitted, plus the absolute one — another author's draft is unreadable on
+  any stage configuration, by anyone.
+- A candidate gets nothing back from every exported feedback and scorecard
+  query, asserted directly. For the pipeline read models the same property is
+  asserted one level down, on `visibleApplicationsWhere` and
+  `canViewApplication` in `test/unit/hiring/access.test.ts`, which every one of
+  them routes through.
+- Stage transitions, rubric immutability, revision snapshotting on edit, and
+  the aggregation maths (weighting, mixed scales, the disagreement flag) each
+  have their own suite.
 
 The end-to-end suite drives the entire admin → candidate → admin workflow in
 a real Chromium against a real build and a real database: sign in as admin,
@@ -625,24 +830,31 @@ src/
   app/
     login/                 sign-in
     change-password/       forced first-login password change
-    admin/                 admin console
+    admin/                 hiring console
     interview/             candidate workspace
   components/
     ui/                    design-system primitives
     admin/                 admin-only composites
     workspace/             candidate workspace composites
   features/
-    auth/                  password, session, guards, bootstrap, actions
+    auth/                  password, session, guards, capabilities, bootstrap
     candidates/            admin CRUD for candidates
+    staff/                 staff accounts and role changes
     interviews/            admin CRUD for interviews
     questions/             admin CRUD for questions + test cases
     submissions/           submission creation, drafts, scoring
     execution/             CodeExecutor abstraction + JS/Python adapters
-    dashboard/             dashboard aggregates
+    pipeline/              applications, stages, panels, templates, access
+    rubrics/               versioned scoring instruments
+    feedback/              scorecards, revisions, notes, the blind rule
+    scorecard/             aggregation — signal, never verdict
+    decisions/             the recorded hire / no-hire
+    dashboard/             per-viewer tiles + the audit-log activity feed
   lib/
     db/                    Prisma client singleton
     email/                 Mailjet transport + message templates
     validation/            Zod schemas
+    audit.ts               append-only pipeline event log
     env.ts / env.server.ts browser-safe vs server-only configuration
 test/
   unit/                    vitest
@@ -666,6 +878,28 @@ Designed for, not built:
 - AI-assisted evaluation, question banks, randomisation, organisations/tenants,
   password-reset email, proctoring, plagiarism detection. (Candidate
   invitation email ships — see [Candidate invitation email](#candidate-invitation-email).)
+- **Scorecard autosave.** The candidate's code editor mirrors every keystroke
+  to `localStorage` and re-queues a failed save (`use-draft-autosave.ts`); the
+  scorecard form does none of that, so an interviewer who closes the tab loses
+  what they had typed. The hook already exists and is the obvious thing to
+  reuse.
+- **Feedback reminders.** The queue and the age are there; the nudge that
+  actually makes a late scorecard arrive is not. The Mailjet transport is
+  already wired, so this is a scheduler and a template.
+- **Interviewer calibration.** Every ingredient is now recorded — each
+  panellist's recommendation distribution against the eventual decision — but
+  nothing reads it back. This is the analysis that tells you whether a
+  particular interviewer is systematically harsh, and it is the main reason
+  the data is shaped this way.
+- **Live-round collaboration.** A `LIVE_CODING` stage currently means "run it
+  however you like, record the scorecard here". Sharing the candidate's
+  workspace with the panel in real time is a genuinely different build.
+- **Retention and candidate data export.** Interview feedback about
+  identifiable people is regulated in most jurisdictions and candidates may
+  have a right to access it. The schema keeps everything and deletes nothing;
+  a retention window, a purge job and a candidate-facing export are needed
+  before this runs at any scale. The existing "deactivate, never delete"
+  stance will have to be reconciled with that.
 
 None of these are stubbed. The seams are there; the code is not.
 

@@ -89,6 +89,10 @@ jobs:
 
       SEED_CANDIDATE_EMAIL: candidate@magicvoice.local
       SEED_CANDIDATE_PASSWORD: E2ECandidatePass!2345
+      # The hiring spec signs in as the seeded recruiter, hiring manager and
+      # interviewer. Without this the seed generates three random passwords and
+      # prints them to the build log, where no test can reach them.
+      SEED_STAFF_PASSWORD: E2EStaffPass!2345
       SEED_DEMO_DATA: 'true'
 
       # The production build would otherwise mark the session cookie Secure,

@@ -25,6 +25,10 @@ import {
   requireAdminPage,
   requireCandidate,
   requireCandidatePage,
+  requireCapability,
+  requireCapabilityPage,
+  requireStaff,
+  requireStaffPage,
   requireUser,
 } from '@/features/auth/guards';
 import type { SessionUser } from '@/features/auth/session';
@@ -192,5 +196,90 @@ describe('homePathFor', () => {
   it('routes anyone who must change their password to the change-password page', () => {
     expect(homePathFor({ role: 'ADMIN', mustChangePassword: true })).toBe('/change-password');
     expect(homePathFor({ role: 'CANDIDATE', mustChangePassword: true })).toBe('/change-password');
+  });
+});
+
+describe('capability guards', () => {
+  const recruiter = user({ id: 'rec-1', role: 'RECRUITER' });
+  const interviewer = user({ id: 'int-1', role: 'INTERVIEWER' });
+  const hiringManager = user({ id: 'hm-1', role: 'HIRING_MANAGER' });
+
+  it('admits a holder of the capability', async () => {
+    h.getCurrentUser.mockResolvedValue(recruiter);
+    await expect(requireCapability('MANAGE_PIPELINE')).resolves.toEqual(recruiter);
+  });
+
+  it('refuses someone who lacks it, whatever else they may do', async () => {
+    h.getCurrentUser.mockResolvedValue(recruiter);
+    await expect(requireCapability('DECIDE')).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it('still forces a temporary password to be rotated first', async () => {
+    h.getCurrentUser.mockResolvedValue(user({ role: 'RECRUITER', mustChangePassword: true }));
+    await expect(requireCapability('MANAGE_PIPELINE')).rejects.toBeInstanceOf(
+      PasswordChangeRequiredError,
+    );
+  });
+
+  // requireAdmin now asks for a capability rather than comparing roles. The
+  // behaviour it guarded must not have widened: only an admin still passes.
+  it('keeps requireAdmin admin-only across every new staff role', async () => {
+    for (const staff of [recruiter, interviewer, hiringManager]) {
+      h.getCurrentUser.mockResolvedValue(staff);
+      await expect(requireAdmin()).rejects.toBeInstanceOf(AuthorizationError);
+    }
+    h.getCurrentUser.mockResolvedValue(admin);
+    await expect(requireAdmin()).resolves.toEqual(admin);
+  });
+
+  it('admits every staff role to the console and refuses a candidate', async () => {
+    for (const staff of [admin, recruiter, interviewer, hiringManager]) {
+      h.getCurrentUser.mockResolvedValue(staff);
+      await expect(requireStaff()).resolves.toEqual(staff);
+    }
+    h.getCurrentUser.mockResolvedValue(candidate);
+    await expect(requireStaff()).rejects.toBeInstanceOf(AuthorizationError);
+  });
+});
+
+describe('capability page guards', () => {
+  const interviewer = user({ id: 'int-1', role: 'INTERVIEWER' });
+
+  it('lets a staff member through a page their role covers', async () => {
+    h.getCurrentUser.mockResolvedValue(interviewer);
+    await expect(requireStaffPage()).resolves.toEqual(interviewer);
+    expect(h.redirect).not.toHaveBeenCalled();
+  });
+
+  // A staff member who lacks the capability goes to the console home, not to
+  // /interview: they are not a candidate, and dropping an interviewer into a
+  // candidate workspace is a confusing dead end.
+  it('sends a staff member without the capability to the console home', async () => {
+    h.getCurrentUser.mockResolvedValue(interviewer);
+    await expect(redirectedTo(() => requireCapabilityPage('MANAGE_CONTENT'))).resolves.toBe(
+      '/admin',
+    );
+  });
+
+  it('still sends a candidate to their own workspace', async () => {
+    h.getCurrentUser.mockResolvedValue(candidate);
+    await expect(redirectedTo(requireStaffPage)).resolves.toBe('/interview');
+  });
+
+  // The password gate must be checked before the capability check, or a staff
+  // member with a temporary password bounces to /admin and never rotates it.
+  it('forces a password rotation ahead of the capability check', async () => {
+    h.getCurrentUser.mockResolvedValue(user({ role: 'INTERVIEWER', mustChangePassword: true }));
+    await expect(redirectedTo(() => requireCapabilityPage('MANAGE_CONTENT'))).resolves.toBe(
+      '/change-password',
+    );
+  });
+});
+
+describe('homePathFor with the new staff roles', () => {
+  it('routes every staff role to the console', () => {
+    for (const role of ['ADMIN', 'RECRUITER', 'HIRING_MANAGER', 'INTERVIEWER'] as const) {
+      expect(homePathFor({ role, mustChangePassword: false })).toBe('/admin');
+    }
   });
 });

@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { requireAdminPage } from '@/features/auth/guards';
+import { requireCapabilityPage } from '@/features/auth/guards';
 import { notFound } from 'next/navigation';
 import { Trash2 } from 'lucide-react';
 import { getQuestion, getQuestionUsage } from '@/features/questions/queries';
@@ -14,14 +14,14 @@ interface PageProps {
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  await requireAdminPage();
+  await requireCapabilityPage('MANAGE_CONTENT');
   const { id } = await params;
   const question = await getQuestion(id);
   return { title: question ? question.title : 'Question' };
 }
 
 export default async function QuestionDetailPage({ params }: PageProps) {
-  await requireAdminPage();
+  await requireCapabilityPage('MANAGE_CONTENT');
   const { id } = await params;
   const question = await getQuestion(id);
   if (!question) notFound();

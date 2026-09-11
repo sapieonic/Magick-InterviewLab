@@ -6,7 +6,7 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/db/prisma';
 import { actionGuard, AppError, NotFoundError } from '@/lib/errors';
 import { ok, type ActionResult } from '@/lib/action-result';
-import { requireAdmin } from '@/features/auth/guards';
+import { requireCapability } from '@/features/auth/guards';
 import {
   assignInterviewSchema,
   cuidSchema,
@@ -37,7 +37,7 @@ export async function createInterviewAction(
   formData: FormData,
 ): Promise<ActionResult<undefined>> {
   return actionGuard(async () => {
-    await requireAdmin();
+    await requireCapability('MANAGE_CONTENT');
     const input = readInterviewForm(formData);
 
     const interview = await prisma.interview.create({
@@ -57,7 +57,7 @@ export async function updateInterviewAction(
   formData: FormData,
 ): Promise<ActionResult<undefined>> {
   return actionGuard(async () => {
-    await requireAdmin();
+    await requireCapability('MANAGE_CONTENT');
     const id = cuidSchema.parse(formData.get('id'));
     const input = readInterviewForm(formData);
 
@@ -77,7 +77,7 @@ export async function archiveInterviewAction(
   formData: FormData,
 ): Promise<ActionResult<undefined>> {
   return actionGuard(async () => {
-    await requireAdmin();
+    await requireCapability('MANAGE_CONTENT');
     const id = cuidSchema.parse(formData.get('id'));
 
     const existing = await prisma.interview.findUnique({ where: { id }, select: { id: true } });
@@ -98,7 +98,7 @@ export async function addInterviewQuestionAction(
   formData: FormData,
 ): Promise<ActionResult<undefined>> {
   return actionGuard(async () => {
-    await requireAdmin();
+    await requireCapability('MANAGE_CONTENT');
     const interviewId = cuidSchema.parse(formData.get('interviewId'));
     const questionId = cuidSchema.parse(formData.get('questionId'));
 
@@ -134,7 +134,7 @@ export async function removeInterviewQuestionAction(
   formData: FormData,
 ): Promise<ActionResult<undefined>> {
   return actionGuard(async () => {
-    await requireAdmin();
+    await requireCapability('MANAGE_CONTENT');
     const interviewId = cuidSchema.parse(formData.get('interviewId'));
     const questionId = cuidSchema.parse(formData.get('questionId'));
 
@@ -173,7 +173,7 @@ export async function reorderInterviewQuestionsAction(
   payload: unknown,
 ): Promise<ActionResult<undefined>> {
   return actionGuard(async () => {
-    await requireAdmin();
+    await requireCapability('MANAGE_CONTENT');
     const input = reorderQuestionsSchema.parse(payload);
 
     const existing = await prisma.interviewQuestion.findMany({
@@ -206,7 +206,7 @@ export async function assignInterviewAction(
   formData: FormData,
 ): Promise<ActionResult<undefined>> {
   return actionGuard(async () => {
-    await requireAdmin();
+    await requireCapability('MANAGE_PIPELINE');
     const input = assignInterviewSchema.parse({
       candidateId: formData.get('candidateId'),
       interviewId: formData.get('interviewId'),
@@ -249,11 +249,35 @@ export async function unassignInterviewAction(
   formData: FormData,
 ): Promise<ActionResult<undefined>> {
   return actionGuard(async () => {
-    await requireAdmin();
+    await requireCapability('MANAGE_PIPELINE');
     const input = assignInterviewSchema.parse({
       candidateId: formData.get('candidateId'),
       interviewId: formData.get('interviewId'),
     });
+
+    // A pipeline round can be *backed* by this assignment, and the foreign key
+    // is `ON DELETE SET NULL`: deleting the assignment silently blanks
+    // `stages.assignmentId`. Nothing about the round changes visibly at the
+    // moment it happens, which is what makes it dangerous — a coding round
+    // whose assignment was `COMPLETED` reads as "awaiting feedback" everywhere
+    // through `deriveCodingStageStatus`, and with the assignment gone it
+    // reverts to "pending" for a round that was submitted days ago, taking the
+    // code and the test results the panellist was reviewing with it.
+    //
+    // So this refuses rather than detaching. Detaching quietly is the bug;
+    // detaching loudly is `deleteStageAction`'s job, where the round and its
+    // panel go together and the removal is recorded against the application.
+    const pinned = await prisma.stage.findFirst({
+      where: {
+        assignment: { is: { interviewId: input.interviewId, candidateId: input.candidateId } },
+      },
+      select: { name: true },
+    });
+    if (pinned) {
+      throw new AppError(
+        `That assessment backs the round "${pinned.name}" on this candidate's application. Remove that round first — unassigning here would leave the round pointing at nothing and reset the progress it is showing.`,
+      );
+    }
 
     const { count } = await prisma.interviewAssignment.deleteMany({
       where: { interviewId: input.interviewId, candidateId: input.candidateId },

@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { requireAdminPage } from '@/features/auth/guards';
+import { requireCapabilityPage } from '@/features/auth/guards';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { Archive, Users, X } from 'lucide-react';
@@ -35,14 +35,14 @@ interface PageProps {
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  await requireAdminPage();
+  await requireCapabilityPage('MANAGE_CONTENT');
   const { id } = await params;
   const interview = await getInterview(id);
   return { title: interview ? interview.title : 'Interview' };
 }
 
 export default async function InterviewDetailPage({ params }: PageProps) {
-  await requireAdminPage();
+  await requireCapabilityPage('MANAGE_CONTENT');
   const { id } = await params;
   const interview = await getInterview(id);
   if (!interview) notFound();

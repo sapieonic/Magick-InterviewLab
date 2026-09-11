@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { requireAdminPage } from '@/features/auth/guards';
+import { requireCapabilityPage } from '@/features/auth/guards';
 import { QuestionEditor } from '@/components/admin/question-editor';
 import { PageHeader } from '@/components/admin/page-header';
 
@@ -20,7 +20,7 @@ print(line)
 `;
 
 export default async function NewQuestionPage() {
-  await requireAdminPage();
+  await requireCapabilityPage('MANAGE_CONTENT');
   return (
     <>
       <PageHeader

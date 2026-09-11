@@ -1,12 +1,13 @@
 import type { Metadata } from 'next';
-import { requireAdminPage } from '@/features/auth/guards';
+import { requireStaffPage } from '@/features/auth/guards';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { AlertTriangle, CheckCircle2, ChevronRight, Timer, XCircle } from 'lucide-react';
-import { getSubmission, type StoredTestResult } from '../queries';
+import { getSubmissionForReview, type StoredTestResult } from '../queries';
 import { PageHeader, Section } from '@/components/admin/page-header';
 import { LanguageBadge, ScoreBadge } from '@/components/admin/badges';
 import { CodeBlock, OutputBlock } from '@/components/admin/code-block';
+import { SubmissionNotes } from '@/components/admin/submission-notes';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { formatDate } from '@/lib/utils';
@@ -16,12 +17,12 @@ interface PageProps {
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  await requireAdminPage();
+  const viewer = await requireStaffPage();
   const { id } = await params;
-  const submission = await getSubmission(id);
+  const review = await getSubmissionForReview(viewer, id);
   return {
-    title: submission
-      ? `${submission.candidate.name} · ${submission.question.title}`
+    title: review
+      ? `${review.submission.candidate.name} · ${review.submission.question.title}`
       : 'Submission',
   };
 }
@@ -81,12 +82,19 @@ function TestResultRow({ test, index }: { test: StoredTestResult; index: number 
 }
 
 export default async function SubmissionDetailPage({ params }: PageProps) {
-  await requireAdminPage();
+  // Any staff member who may see the owning application, not admins only: the
+  // panel of a coding round has to be able to read the code it is scoring.
+  // `getSubmissionForReview` makes that decision — including the fallback to
+  // `VIEW_ALL_APPLICATIONS` for an assessment no pipeline has picked up — and
+  // returns null for "missing" and "not yours" alike.
+  const viewer = await requireStaffPage();
   const { id } = await params;
-  const submission = await getSubmission(id);
-  if (!submission) notFound();
+  const review = await getSubmissionForReview(viewer, id);
+  if (!review) notFound();
 
+  const { submission, notes } = review;
   const { results } = submission;
+  const lineCount = submission.sourceCode.replace(/\r\n?/g, '\n').split('\n').length;
 
   return (
     <>
@@ -180,6 +188,13 @@ export default async function SubmissionDetailPage({ params }: PageProps) {
               </div>
             </Section>
           ) : null}
+
+          <Section
+            title="Reviewer notes"
+            description="Shared with everyone reviewing this submission — unlike a scorecard, these are not blind."
+          >
+            <SubmissionNotes submissionId={submission.id} notes={notes} lineCount={lineCount} />
+          </Section>
         </div>
 
         <aside className="space-y-5">

@@ -1,16 +1,17 @@
 import Link from 'next/link';
 import { LogOut } from 'lucide-react';
-import { requireAdminPage } from '@/features/auth/guards';
+import { requireStaffPage } from '@/features/auth/guards';
 import { logoutAction } from '@/features/auth/actions';
 import { PoweredBy, Wordmark } from '@/components/brand';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { AdminNav } from '@/components/admin/admin-nav';
+import { capabilitiesOf, roleLabel } from '@/features/auth/capabilities';
 import { Button } from '@/components/ui/button';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
-  const admin = await requireAdminPage();
+  const viewer = await requireStaffPage();
 
   return (
     <div className="flex min-h-dvh flex-col">
@@ -25,12 +26,15 @@ export default async function AdminLayout({ children }: { children: React.ReactN
             <Wordmark subtitle="InterviewLab" />
           </Link>
 
-          <AdminNav className="order-3 -mx-1 w-full pb-1 md:order-2 md:mx-0 md:w-auto md:pb-0" />
+          <AdminNav
+            className="order-3 -mx-1 w-full pb-1 md:order-2 md:mx-0 md:w-auto md:pb-0"
+            capabilities={capabilitiesOf(viewer.role)}
+          />
 
           <div className="order-2 ml-auto flex items-center gap-2 md:order-3">
             <div className="hidden text-right leading-tight sm:block">
-              <p className="text-[13px] font-medium">{admin.name}</p>
-              <p className="text-muted-foreground text-[11px]">{admin.email}</p>
+              <p className="text-[13px] font-medium">{viewer.name}</p>
+              <p className="text-muted-foreground text-[11px]">{roleLabel(viewer.role)}</p>
             </div>
             <ThemeToggle />
             <form action={logoutAction}>

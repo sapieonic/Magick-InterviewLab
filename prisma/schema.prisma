@@ -11,8 +11,15 @@ datasource db {
   provider = "postgresql"
 }
 
+/// Account type. Everything that is not CANDIDATE is staff and may reach the
+/// hiring console; what a staff member may *do* there is decided by the
+/// capability helpers in `src/features/auth/capabilities.ts`, never by a bare
+/// equality check on this field.
 enum Role {
   ADMIN
+  RECRUITER
+  HIRING_MANAGER
+  INTERVIEWER
   CANDIDATE
 }
 
@@ -57,6 +64,20 @@ model User {
   assignments InterviewAssignment[]
   submissions Submission[]
   codeDrafts  CodeDraft[]
+
+  // Hiring pipeline. A candidate owns `applications`; staff own everything
+  // else. Both live on one `User` because a login is a login — the role, not
+  // the table, decides which half is ever populated.
+  applications        Application[]        @relation("ApplicationCandidate")
+  ownedApplications   Application[]        @relation("ApplicationOwner")
+  panels              StageInterviewer[]
+  feedback            Feedback[]
+  feedbackRevisions   FeedbackRevision[]
+  rubricVersions      RubricVersion[]
+  submissionNotes     SubmissionNote[]
+  applicationComments ApplicationComment[]
+  decisions           Decision[]
+  auditEvents         AuditEvent[]
 
   @@index([role])
   @@index([isActive])
@@ -172,6 +193,8 @@ model InterviewAssignment {
 
   interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
   candidate User      @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  /// Set when this assessment is being run as a round of a hiring pipeline.
+  stage     Stage?
 
   @@unique([interviewId, candidateId])
   @@index([candidateId])
@@ -194,9 +217,10 @@ model Submission {
   results     Json     @default("{}")
   submittedAt DateTime @default(now())
 
-  candidate User      @relation(fields: [candidateId], references: [id], onDelete: Cascade)
-  interview Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
-  question  Question  @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  candidate User             @relation(fields: [candidateId], references: [id], onDelete: Cascade)
+  interview Interview        @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  question  Question         @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  notes     SubmissionNote[]
 
   @@index([candidateId, submittedAt])
   @@index([interviewId, questionId])
@@ -222,4 +246,456 @@ model CodeDraft {
   @@unique([candidateId, questionId, language])
   @@index([questionId])
   @@map("code_drafts")
+}
+
+// ---------------------------------------------------------------------------
+// Hiring pipeline
+//
+// An `Interview` above is a *coding assessment*: a set of questions, machine
+// graded. Everything below is the hiring process that assessment sits inside —
+// the stages a candidate moves through, the human judgement recorded at each
+// one, and the single explicit decision at the end.
+//
+// Two rules shape this half of the schema:
+//
+//  1. **Nothing here computes a verdict.** Scores and recommendations
+//     aggregate into a *signal*; a `Decision` is written by a person, with a
+//     rationale, or it does not exist.
+//  2. **Feedback is evidence, so it is append-only.** A submitted `Feedback`
+//     may be edited, but every prior state is kept as a `FeedbackRevision`.
+// ---------------------------------------------------------------------------
+
+enum ApplicationStatus {
+  ACTIVE
+  ON_HOLD
+  HIRED
+  REJECTED
+  WITHDRAWN
+}
+
+/// What kind of round a stage is. `CODING_ASSESSMENT` is the only type wired to
+/// the automated `Interview` machinery; every other type is a round a human
+/// runs however they like, where this platform holds only the scorecard.
+enum StageType {
+  CODING_ASSESSMENT
+  LIVE_CODING
+  SYSTEM_DESIGN
+  BEHAVIORAL
+  HIRING_MANAGER
+}
+
+enum StageStatus {
+  PENDING
+  SCHEDULED
+  IN_PROGRESS
+  AWAITING_FEEDBACK
+  COMPLETE
+  SKIPPED
+}
+
+enum StageOutcome {
+  ADVANCE
+  HOLD
+  REJECT
+}
+
+/// Six points and no neutral middle: a five-point scale collects threes, and a
+/// three tells a debrief nothing.
+enum Recommendation {
+  STRONG_NO
+  NO
+  LEAN_NO
+  LEAN_HIRE
+  HIRE
+  STRONG_HIRE
+}
+
+enum Confidence {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum FeedbackStatus {
+  DRAFT
+  SUBMITTED
+}
+
+enum InterviewerRole {
+  LEAD
+  PANELIST
+  SHADOW
+}
+
+enum DecisionOutcome {
+  HIRE
+  NO_HIRE
+  HOLD
+}
+
+/// A position a candidate is evaluated against. Optional on an application —
+/// a one-off assessment need not invent a requisition — but when present it
+/// carries the default pipeline, so "Backend L4" always means the same rounds.
+model JobRole {
+  id          String   @id @default(cuid())
+  title       String
+  level       String   @default("")
+  description String   @default("")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  pipelineTemplateId String?
+  pipelineTemplate   PipelineTemplate? @relation(fields: [pipelineTemplateId], references: [id], onDelete: SetNull)
+
+  applications Application[]
+
+  @@index([isActive])
+  @@map("job_roles")
+}
+
+model PipelineTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  description String   @default("")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  stages       PipelineStageTemplate[]
+  jobRoles     JobRole[]
+  applications Application[]
+
+  @@index([isActive])
+  @@map("pipeline_templates")
+}
+
+model PipelineStageTemplate {
+  id         String    @id @default(cuid())
+  templateId String
+  name       String
+  type       StageType
+  position   Int
+  /// The rubric a stage created from this template is scored against. The
+  /// *version* is pinned when the stage is created, not here — a template
+  /// tracks the rubric, an instance freezes it.
+  rubricId   String?
+  isRequired Boolean   @default(true)
+
+  template PipelineTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  rubric   Rubric?          @relation(fields: [rubricId], references: [id], onDelete: SetNull)
+
+  @@index([templateId, position])
+  @@map("pipeline_stage_templates")
+}
+
+/// A candidate's run at a role. This — not the assessment — is the thing that
+/// moves through the process and the thing a decision is made about.
+model Application {
+  id                 String            @id @default(cuid())
+  candidateId        String
+  jobRoleId          String?
+  pipelineTemplateId String?
+  status             ApplicationStatus @default(ACTIVE)
+  /// The recruiter accountable for moving this along.
+  ownerId            String?
+  source             String            @default("")
+  closedAt           DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  candidate        User              @relation("ApplicationCandidate", fields: [candidateId], references: [id], onDelete: Cascade)
+  owner            User?             @relation("ApplicationOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  jobRole          JobRole?          @relation(fields: [jobRoleId], references: [id], onDelete: SetNull)
+  pipelineTemplate PipelineTemplate? @relation(fields: [pipelineTemplateId], references: [id], onDelete: SetNull)
+
+  stages   Stage[]
+  comments ApplicationComment[]
+  decision Decision?
+  events   AuditEvent[]
+
+  @@index([candidateId])
+  @@index([status])
+  @@index([ownerId])
+  @@index([jobRoleId])
+  @@index([pipelineTemplateId])
+  @@map("applications")
+}
+
+/// One round on one application.
+model Stage {
+  id              String        @id @default(cuid())
+  applicationId   String
+  name            String
+  type            StageType
+  position        Int
+  status          StageStatus   @default(PENDING)
+  outcome         StageOutcome?
+  scheduledAt     DateTime?
+  completedAt     DateTime?
+  /// Pinned at creation so that editing a rubric never retroactively
+  /// re-interprets a scorecard someone already wrote.
+  rubricVersionId String?
+  /// When true, an interviewer cannot read anyone else's feedback on this
+  /// stage until their own is submitted. Enforced in the query layer.
+  blindFeedback   Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  /// Set only for CODING_ASSESSMENT stages: the automated interview this
+  /// round is run as. One assignment backs at most one stage.
+  assignmentId String? @unique
+
+  application   Application          @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  assignment    InterviewAssignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  rubricVersion RubricVersion?       @relation(fields: [rubricVersionId], references: [id], onDelete: SetNull)
+
+  interviewers StageInterviewer[]
+  feedback     Feedback[]
+
+  @@index([applicationId, position])
+  @@index([status])
+  /// Counted per version by the rubric screens, and scanned by the SetNull
+  /// cascade when a version is removed.
+  @@index([rubricVersionId])
+  @@map("stages")
+}
+
+/// Who is on the panel for a round. Being on this list is what authorizes
+/// writing feedback — role alone never is.
+model StageInterviewer {
+  id        String          @id @default(cuid())
+  stageId   String
+  userId    String
+  role      InterviewerRole @default(PANELIST)
+  createdAt DateTime        @default(now())
+
+  stage Stage @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([stageId, userId])
+  @@index([userId])
+  @@map("stage_interviewers")
+}
+
+/// A named scoring instrument. The criteria live on a *version* so that a
+/// published rubric is immutable once anything has been scored against it.
+model Rubric {
+  id          String   @id @default(cuid())
+  name        String
+  description String   @default("")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  versions       RubricVersion[]
+  stageTemplates PipelineStageTemplate[]
+
+  @@index([isActive])
+  @@map("rubrics")
+}
+
+model RubricVersion {
+  id          String    @id @default(cuid())
+  rubricId    String
+  version     Int
+  /// A draft may still be edited; publishing freezes it. Only a published
+  /// version may be pinned to a stage.
+  isPublished Boolean   @default(false)
+  notes       String    @default("")
+  createdById String?
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  /// `Restrict`, not `Cascade`. Deleting a rubric would take its versions, their
+  /// criteria and — through `FeedbackScore`, which cascades from a criterion —
+  /// every score ever entered against it, while leaving the `Feedback` rows
+  /// standing with their prose intact and their numbers gone. A scorecard that
+  /// still looks complete and silently aggregates to nothing is the worst
+  /// available outcome, so a rubric in use cannot be deleted at all. Retiring
+  /// one is `archiveRubricAction`.
+  rubric    Rubric @relation(fields: [rubricId], references: [id], onDelete: Restrict)
+  createdBy User?  @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  criteria RubricCriterion[]
+  stages   Stage[]
+  feedback Feedback[]
+
+  @@unique([rubricId, version])
+  @@map("rubric_versions")
+}
+
+model RubricCriterion {
+  id              String @id @default(cuid())
+  rubricVersionId String
+  name            String
+  description     String @default("")
+  /// Relative weight when averaging a scorecard.
+  weight          Int    @default(1)
+  /// Top of the scale. 1 is always the bottom.
+  maxScore        Int    @default(4)
+  position        Int    @default(0)
+
+  rubricVersion RubricVersion   @relation(fields: [rubricVersionId], references: [id], onDelete: Cascade)
+  scores        FeedbackScore[]
+
+  @@index([rubricVersionId, position])
+  @@map("rubric_criteria")
+}
+
+/// One interviewer's scorecard for one round.
+model Feedback {
+  id              String          @id @default(cuid())
+  stageId         String
+  authorId        String
+  status          FeedbackStatus  @default(DRAFT)
+  recommendation  Recommendation?
+  confidence      Confidence?
+  /// Markdown.
+  summary         String          @default("")
+  strengths       String          @default("")
+  concerns        String          @default("")
+  /// Pinned from the stage so a scorecard always reports the criteria it was
+  /// actually written against.
+  rubricVersionId String?
+  submittedAt     DateTime?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  stage         Stage          @relation(fields: [stageId], references: [id], onDelete: Cascade)
+  /// `Restrict`. Deleting a departed interviewer's account must not delete the
+  /// scorecards they wrote — that would retroactively change the aggregate on
+  /// applications already decided. `AuditEvent.actorId` makes the same call
+  /// ("the trail outlives the actor"); this is the same principle applied to
+  /// the evidence itself. Accounts are deactivated, never deleted.
+  author        User           @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  rubricVersion RubricVersion? @relation(fields: [rubricVersionId], references: [id], onDelete: SetNull)
+
+  scores    FeedbackScore[]
+  revisions FeedbackRevision[]
+
+  @@unique([stageId, authorId])
+  @@index([authorId, status])
+  @@index([rubricVersionId])
+  @@map("feedback")
+}
+
+model FeedbackScore {
+  id          String @id @default(cuid())
+  feedbackId  String
+  criterionId String
+  score       Int
+  note        String @default("")
+
+  feedback  Feedback        @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+  criterion RubricCriterion @relation(fields: [criterionId], references: [id], onDelete: Cascade)
+
+  @@unique([feedbackId, criterionId])
+  @@map("feedback_scores")
+}
+
+/// The state a submitted feedback held before an edit. Evidence is never
+/// silently rewritten: an edit appends here first.
+model FeedbackRevision {
+  id         String   @id @default(cuid())
+  feedbackId String
+  editedById String?
+  reason     String   @default("")
+  /// The full prior content — recommendation, confidence, prose and scores.
+  snapshot   Json
+  createdAt  DateTime @default(now())
+
+  feedback Feedback @relation(fields: [feedbackId], references: [id], onDelete: Cascade)
+  editedBy User?    @relation(fields: [editedById], references: [id], onDelete: SetNull)
+
+  @@index([feedbackId, createdAt])
+  @@map("feedback_revisions")
+}
+
+/// A reviewer's note against a specific submission, optionally anchored to a
+/// line range of the submitted source.
+model SubmissionNote {
+  id           String   @id @default(cuid())
+  submissionId String
+  authorId     String
+  body         String
+  lineStart    Int?
+  lineEnd      Int?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  /// `Restrict`, for the reason given on `Feedback.author`.
+  author     User       @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([submissionId, createdAt])
+  @@map("submission_notes")
+}
+
+/// Coordination chatter on an application — scheduling, candidate availability,
+/// context a recruiter needs. Deliberately *not* routed through the rubric.
+model ApplicationComment {
+  id            String   @id @default(cuid())
+  applicationId String
+  authorId      String
+  body          String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  /// `Restrict`, for the reason given on `Feedback.author`.
+  author      User        @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([applicationId, createdAt])
+  @@map("application_comments")
+}
+
+/// The hire / no-hire. One per application; a change rewrites this row and
+/// leaves the previous outcome in the audit log.
+model Decision {
+  id            String          @id @default(cuid())
+  applicationId String          @unique
+  outcome       DecisionOutcome
+  /// Required. A decision without a written reason is not reviewable.
+  rationale     String
+  decidedById   String?
+  decidedAt     DateTime        @default(now())
+  /// The aggregate signal as it stood when the call was made, so a later
+  /// reader sees what the decider saw rather than what the data says today.
+  snapshot      Json            @default("{}")
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  decidedBy   User?       @relation(fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@map("decisions")
+}
+
+/// Append-only record of everything that moves a candidate or records an
+/// opinion. The dashboard's activity feed reads this rather than inferring
+/// history from logins and submissions.
+model AuditEvent {
+  id            String   @id @default(cuid())
+  actorId       String?
+  action        String
+  entityType    String
+  entityId      String
+  applicationId String?
+  metadata      Json     @default("{}")
+  createdAt     DateTime @default(now())
+
+  actor       User?        @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  /// `Restrict`. Cascading here would delete a candidate's entire trail along
+  /// with the application, putting a "delete my data" request and an audit
+  /// obligation in direct conflict with no way to satisfy both. Refusing the
+  /// delete surfaces that conflict to a human instead of resolving it silently
+  /// in favour of forgetting. See README "Future work" on retention.
+  application Application? @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+
+  @@index([applicationId, createdAt])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_events")
 }
