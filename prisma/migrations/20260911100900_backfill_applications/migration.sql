@@ -32,6 +32,20 @@ GROUP BY a."candidateId";
 
 -- One stage per assignment, ordered by when it was assigned. The stage name
 -- is the interview's title, which is what a reviewer recognises.
+--
+-- Two things here are load-bearing and were wrong in an earlier draft:
+--
+--  * The application is chosen with a correlated subquery rather than a plain
+--    JOIN on `candidateId`. A candidate with two applications would otherwise
+--    match both, producing two stage rows carrying the same `assignmentId` —
+--    which violates `stages_assignmentId_key` and aborts the whole migration.
+--    Backfilled stages belong to the backfilled application, and only that one.
+--
+--  * `position` continues from the stages that application already has, rather
+--    than restarting at 0. `WHERE` is evaluated before the window function, so
+--    a `ROW_NUMBER()` over the filtered set always starts again at 1 — on a
+--    re-run against an application that was already backfilled, every new row
+--    would land on a position that is already taken.
 INSERT INTO "stages" (
   "id", "applicationId", "name", "type", "position", "status",
   "assignmentId", "blindFeedback", "completedAt", "createdAt", "updatedAt"
@@ -41,7 +55,8 @@ SELECT
   app."id",
   i."title",
   'CODING_ASSESSMENT'::"StageType",
-  (ROW_NUMBER() OVER (PARTITION BY a."candidateId" ORDER BY a."createdAt", a."id"))::int - 1,
+  COALESCE(existing."maxPosition" + 1, 0)
+    + (ROW_NUMBER() OVER (PARTITION BY app."id" ORDER BY a."createdAt", a."id"))::int - 1,
   CASE a."status"
     WHEN 'ASSIGNED'    THEN 'PENDING'::"StageStatus"
     WHEN 'IN_PROGRESS' THEN 'IN_PROGRESS'::"StageStatus"
@@ -54,8 +69,20 @@ SELECT
   a."createdAt",
   NOW()
 FROM "interview_assignments" a
-JOIN "applications" app ON app."candidateId" = a."candidateId"
 JOIN "interviews" i ON i."id" = a."interviewId"
+JOIN LATERAL (
+  SELECT app2."id"
+  FROM "applications" app2
+  WHERE app2."candidateId" = a."candidateId"
+    AND app2."source" = 'backfill'
+  ORDER BY app2."createdAt", app2."id"
+  LIMIT 1
+) app ON true
+LEFT JOIN LATERAL (
+  SELECT MAX(s2."position") AS "maxPosition"
+  FROM "stages" s2
+  WHERE s2."applicationId" = app."id"
+) existing ON true
 WHERE NOT EXISTS (
   SELECT 1 FROM "stages" s WHERE s."assignmentId" = a."id"
 );

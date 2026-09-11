@@ -417,6 +417,8 @@ model Application {
   @@index([candidateId])
   @@index([status])
   @@index([ownerId])
+  @@index([jobRoleId])
+  @@index([pipelineTemplateId])
   @@map("applications")
 }
 
@@ -453,6 +455,9 @@ model Stage {
 
   @@index([applicationId, position])
   @@index([status])
+  /// Counted per version by the rubric screens, and scanned by the SetNull
+  /// cascade when a version is removed.
+  @@index([rubricVersionId])
   @@map("stages")
 }
 
@@ -503,7 +508,14 @@ model RubricVersion {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  rubric    Rubric @relation(fields: [rubricId], references: [id], onDelete: Cascade)
+  /// `Restrict`, not `Cascade`. Deleting a rubric would take its versions, their
+  /// criteria and — through `FeedbackScore`, which cascades from a criterion —
+  /// every score ever entered against it, while leaving the `Feedback` rows
+  /// standing with their prose intact and their numbers gone. A scorecard that
+  /// still looks complete and silently aggregates to nothing is the worst
+  /// available outcome, so a rubric in use cannot be deleted at all. Retiring
+  /// one is `archiveRubricAction`.
+  rubric    Rubric @relation(fields: [rubricId], references: [id], onDelete: Restrict)
   createdBy User?  @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
   criteria RubricCriterion[]
@@ -552,7 +564,12 @@ model Feedback {
   updatedAt       DateTime        @updatedAt
 
   stage         Stage          @relation(fields: [stageId], references: [id], onDelete: Cascade)
-  author        User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  /// `Restrict`. Deleting a departed interviewer's account must not delete the
+  /// scorecards they wrote — that would retroactively change the aggregate on
+  /// applications already decided. `AuditEvent.actorId` makes the same call
+  /// ("the trail outlives the actor"); this is the same principle applied to
+  /// the evidence itself. Accounts are deactivated, never deleted.
+  author        User           @relation(fields: [authorId], references: [id], onDelete: Restrict)
   rubricVersion RubricVersion? @relation(fields: [rubricVersionId], references: [id], onDelete: SetNull)
 
   scores    FeedbackScore[]
@@ -560,6 +577,7 @@ model Feedback {
 
   @@unique([stageId, authorId])
   @@index([authorId, status])
+  @@index([rubricVersionId])
   @@map("feedback")
 }
 
@@ -608,7 +626,8 @@ model SubmissionNote {
   updatedAt    DateTime @updatedAt
 
   submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
-  author     User       @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  /// `Restrict`, for the reason given on `Feedback.author`.
+  author     User       @relation(fields: [authorId], references: [id], onDelete: Restrict)
 
   @@index([submissionId, createdAt])
   @@map("submission_notes")
@@ -625,7 +644,8 @@ model ApplicationComment {
   updatedAt     DateTime @updatedAt
 
   application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
-  author      User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  /// `Restrict`, for the reason given on `Feedback.author`.
+  author      User        @relation(fields: [authorId], references: [id], onDelete: Restrict)
 
   @@index([applicationId, createdAt])
   @@map("application_comments")
@@ -667,7 +687,12 @@ model AuditEvent {
   createdAt     DateTime @default(now())
 
   actor       User?        @relation(fields: [actorId], references: [id], onDelete: SetNull)
-  application Application? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  /// `Restrict`. Cascading here would delete a candidate's entire trail along
+  /// with the application, putting a "delete my data" request and an audit
+  /// obligation in direct conflict with no way to satisfy both. Refusing the
+  /// delete surfaces that conflict to a human instead of resolving it silently
+  /// in favour of forgetting. See README "Future work" on retention.
+  application Application? @relation(fields: [applicationId], references: [id], onDelete: Restrict)
 
   @@index([applicationId, createdAt])
   @@index([entityType, entityId])

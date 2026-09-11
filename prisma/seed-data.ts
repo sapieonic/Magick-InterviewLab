@@ -320,3 +320,96 @@ export const SAMPLE_APPLICATION_PROGRESS: ReadonlyArray<{
   { status: 'PENDING', outcome: null, scheduledDaysAgo: null },
   { status: 'PENDING', outcome: null, scheduledDaysAgo: null },
 ];
+
+/**
+ * The rubric the demo pipeline scores against.
+ *
+ * Seeded rather than left to a human because without it the entire rubric half
+ * of the product — versioned criteria, weighted normalisation, the per-criterion
+ * table on the debrief — cannot be reached on a fresh install: a stage with no
+ * pinned version simply reports that it has nothing to score against.
+ *
+ * Weights are deliberately unequal and `maxScore` is deliberately not uniform,
+ * so the normalisation across differing scales is exercised by the demo rather
+ * than only by unit tests.
+ */
+export const SAMPLE_RUBRIC = {
+  name: 'Engineering interview',
+  description:
+    'The default instrument for engineering rounds. Score against what the ' +
+    'candidate demonstrated in this round, not against their CV.',
+  criteria: [
+    {
+      name: 'Problem solving',
+      description:
+        'Breaks an ambiguous problem down, chooses an approach for stated reasons, ' +
+        'and notices when it is not working.',
+      weight: 3,
+      maxScore: 4,
+    },
+    {
+      name: 'Code quality',
+      description: 'Readable, correct, and structured so the next person can change it.',
+      weight: 2,
+      maxScore: 4,
+    },
+    {
+      name: 'Communication',
+      description:
+        'Thinks out loud, takes a hint, and disagrees clearly when they think you are wrong.',
+      weight: 2,
+      maxScore: 4,
+    },
+    {
+      name: 'Testing instinct',
+      description: 'Reaches for edge cases unprompted rather than when asked.',
+      weight: 1,
+      // A different scale on purpose — see the note above.
+      maxScore: 5,
+    },
+  ],
+} as const;
+
+/**
+ * One submitted scorecard on the round that is awaiting feedback.
+ *
+ * Exactly one, not two: the point of the demo is that the second panellist
+ * opens the round and is told that a scorecard is hidden until they submit
+ * their own. Seeding both would show the blind rule's *result* and hide the
+ * rule itself.
+ */
+export const SAMPLE_FEEDBACK = {
+  stageName: 'Technical screen',
+  recommendation: 'LEAN_HIRE',
+  confidence: 'MEDIUM',
+  summary:
+    'Solid on the core problem — got to a working solution without hints and ' +
+    'explained the trade-off between the two approaches unprompted. Slower on ' +
+    'the follow-up, and needed a nudge to spot the empty-input case.',
+  strengths:
+    'Clear reasoning out loud. Chose the hash-map approach for a stated reason ' +
+    'rather than by reflex, and could say what it cost in memory.',
+  concerns:
+    'Did not test the empty input until prompted. I would want to see how they ' +
+    'handle a larger codebase before calling this a clear hire.',
+  /** Keyed by criterion name so a reordering of the rubric cannot silently
+   *  reassign the scores. */
+  scores: {
+    'Problem solving': { score: 3, note: 'Reached a working solution unaided.' },
+    'Code quality': { score: 3, note: 'Readable; naming drifted under time pressure.' },
+    Communication: { score: 4, note: 'Genuinely good — disagreed with me once, correctly.' },
+    'Testing instinct': { score: 2, note: 'Prompted, not spontaneous.' },
+  },
+} as const;
+
+/** The code the demo candidate "submitted". Deliberately imperfect — it fails
+ *  the last test case, so the review screen shows a real failure. */
+export const SAMPLE_SUBMISSION_SOURCE = `const lines = require('fs').readFileSync(0, 'utf8').split('\\n');
+
+function reverse(input) {
+  // Splits on code units, so this is wrong for astral-plane characters.
+  return input.split('').reverse().join('');
+}
+
+console.log(reverse(lines[0] ?? ''));
+`;

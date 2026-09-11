@@ -112,29 +112,31 @@ bootstrap is create-only.
 
 Every variable, what it does, and whether it is required.
 
-| Variable                        | Required    | Default                      | Exposed to browser | Purpose                                                                                                                                       |
-| ------------------------------- | ----------- | ---------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `DATABASE_URL`                  | **yes**     | —                            | no                 | PostgreSQL connection string.                                                                                                                 |
-| `ADMIN_EMAIL`                   | recommended | —                            | no                 | Bootstrap admin's email. Without it no admin is created.                                                                                      |
-| `ADMIN_PASSWORD_HASH`           | recommended | —                            | no                 | Argon2id hash for the bootstrap admin. Generate with `npm run hash-password`.                                                                 |
-| `ADMIN_PASSWORD`                | no          | —                            | no                 | Plaintext alternative, **development only**; throws in production.                                                                            |
-| `ADMIN_NAME`                    | no          | `MagicVoice Admin`           | no                 | Display name for the bootstrap admin.                                                                                                         |
-| `SESSION_TTL_HOURS`             | no          | `12`                         | no                 | Session lifetime.                                                                                                                             |
-| `COOKIE_SECURE`                 | no          | auto                         | no                 | Force the `Secure` cookie flag. Defaults to on when `NODE_ENV=production`. Set `true` when TLS terminates upstream in a non-production build. |
-| `SEED_CANDIDATE_EMAIL`          | no          | `candidate@magicvoice.local` | no                 | Email for the seeded demo candidate.                                                                                                          |
-| `SEED_CANDIDATE_PASSWORD`       | no          | random                       | no                 | Password for the seeded candidate. If unset, one is generated and printed once.                                                               |
-| `SEED_DEMO_DATA`                | no          | `true`                       | no                 | Set `false` to seed only the admin.                                                                                                           |
-| `MAILJET_API_KEY`               | no          | —                            | no                 | Mailjet API key. Enables candidate invitation email. Required alongside the secret and sender.                                                |
-| `MAILJET_API_SECRET`            | no          | —                            | no                 | Mailjet API secret.                                                                                                                           |
-| `MAIL_FROM_EMAIL`               | no          | —                            | no                 | Sender address. Must be a Mailjet verified sender or verified domain.                                                                         |
-| `MAIL_FROM_NAME`                | no          | `<app name> InterviewLab`    | no                 | Display name on the `From` header. Defaults from `NEXT_PUBLIC_APP_NAME`.                                                                      |
-| `MAIL_REPLY_TO`                 | no          | —                            | no                 | `Reply-To` address, when replies should not go to the sender.                                                                                 |
-| `MAILJET_SANDBOX`               | no          | `false`                      | no                 | `true` makes Mailjet validate every message and deliver nothing.                                                                              |
-| `NEXT_PUBLIC_APP_NAME`          | no          | `MagicVoice`                 | **yes**            | Brand name in the UI.                                                                                                                         |
-| `NEXT_PUBLIC_APP_URL`           | no          | `http://localhost:3000`      | **yes**            | Canonical URL. **Required (and must not be loopback) once email is enabled** — every invitation links to it.                                  |
-| `NEXT_PUBLIC_PYODIDE_INDEX_URL` | no          | jsDelivr CDN                 | **yes**            | Where the Python (Pyodide) runtime is fetched from. Point at your own host to run air-gapped.                                                 |
-| `PORT`                          | no          | `3000`                       | no                 | Server port.                                                                                                                                  |
-| `RUN_MIGRATIONS`                | no          | `true`                       | no                 | Docker entrypoint only: run `prisma migrate deploy` on container start.                                                                       |
+| Variable                        | Required    | Default                      | Exposed to browser | Purpose                                                                                                                                                         |
+| ------------------------------- | ----------- | ---------------------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                  | **yes**     | —                            | no                 | PostgreSQL connection string.                                                                                                                                   |
+| `ADMIN_EMAIL`                   | recommended | —                            | no                 | Bootstrap admin's email. Without it no admin is created.                                                                                                        |
+| `ADMIN_PASSWORD_HASH`           | recommended | —                            | no                 | Argon2id hash for the bootstrap admin. Generate with `npm run hash-password`.                                                                                   |
+| `ADMIN_PASSWORD`                | no          | —                            | no                 | Plaintext alternative, **development only**; throws in production.                                                                                              |
+| `ADMIN_NAME`                    | no          | `MagicVoice Admin`           | no                 | Display name for the bootstrap admin.                                                                                                                           |
+| `SESSION_TTL_HOURS`             | no          | `12`                         | no                 | Session lifetime.                                                                                                                                               |
+| `COOKIE_SECURE`                 | no          | auto                         | no                 | Force the `Secure` cookie flag. Defaults to on when `NODE_ENV=production`. Set `true` when TLS terminates upstream in a non-production build.                   |
+| `SEED_CANDIDATE_EMAIL`          | no          | `candidate@magicvoice.local` | no                 | Email for the seeded demo candidate.                                                                                                                            |
+| `SEED_CANDIDATE_PASSWORD`       | no          | random                       | no                 | Password for the seeded candidate. If unset, one is generated and printed once.                                                                                 |
+| `SEED_SPARE_CANDIDATE_EMAIL`    | no          | `applicant@magicvoice.local` | no                 | A second candidate with nothing attached, so the "start an application" picker is not empty.                                                                    |
+| `SEED_STAFF_PASSWORD`           | no          | random                       | no                 | Shared by the seeded recruiter, hiring manager and interviewer. If unset, three separate passwords are generated and printed — fine on a laptop, useless in CI. |
+| `SEED_DEMO_DATA`                | no          | `true`                       | no                 | Set `false` to seed only the admin. Otherwise the seed also creates the staff accounts, rubric, job role, pipeline template and the demo application.           |
+| `MAILJET_API_KEY`               | no          | —                            | no                 | Mailjet API key. Enables candidate invitation email. Required alongside the secret and sender.                                                                  |
+| `MAILJET_API_SECRET`            | no          | —                            | no                 | Mailjet API secret.                                                                                                                                             |
+| `MAIL_FROM_EMAIL`               | no          | —                            | no                 | Sender address. Must be a Mailjet verified sender or verified domain.                                                                                           |
+| `MAIL_FROM_NAME`                | no          | `<app name> InterviewLab`    | no                 | Display name on the `From` header. Defaults from `NEXT_PUBLIC_APP_NAME`.                                                                                        |
+| `MAIL_REPLY_TO`                 | no          | —                            | no                 | `Reply-To` address, when replies should not go to the sender.                                                                                                   |
+| `MAILJET_SANDBOX`               | no          | `false`                      | no                 | `true` makes Mailjet validate every message and deliver nothing.                                                                                                |
+| `NEXT_PUBLIC_APP_NAME`          | no          | `MagicVoice`                 | **yes**            | Brand name in the UI.                                                                                                                                           |
+| `NEXT_PUBLIC_APP_URL`           | no          | `http://localhost:3000`      | **yes**            | Canonical URL. **Required (and must not be loopback) once email is enabled** — every invitation links to it.                                                    |
+| `NEXT_PUBLIC_PYODIDE_INDEX_URL` | no          | jsDelivr CDN                 | **yes**            | Where the Python (Pyodide) runtime is fetched from. Point at your own host to run air-gapped.                                                                   |
+| `PORT`                          | no          | `3000`                       | no                 | Server port.                                                                                                                                                    |
+| `RUN_MIGRATIONS`                | no          | `true`                       | no                 | Docker entrypoint only: run `prisma migrate deploy` on container start.                                                                                         |
 
 Only `NEXT_PUBLIC_*` variables reach the browser. This is enforced structurally,
 not by convention: `src/lib/env.server.ts` imports `server-only`, so importing
@@ -289,8 +291,11 @@ A round of work looks like this:
    candidate sits the assessment exactly as before, and it is machine graded.
 3. A panel is seated on each stage. Only those people may score it.
 4. Each panellist writes a scorecard — rubric scores with per-criterion notes,
-   a written summary, a recommendation and a confidence. Drafts autosave;
-   submitting is a separate, deliberate act.
+   a written summary, a recommendation and a confidence. **Save draft** and
+   **Submit** are separate, deliberate acts — a draft is saved when you click
+   it, not automatically, so do not leave a half-written scorecard in a tab
+   overnight. (The candidate's code editor _does_ autosave; the scorecard form
+   does not. See [Future work](#future-work).)
 5. Once a panellist submits, the rest of the panel's scorecards become
    readable to them, and not before.
 6. A hiring manager opens the debrief, reads the signal alongside the
@@ -533,7 +538,7 @@ Browser                          Server (Next.js)              Postgres
 ┌──────────────────────┐         ┌────────────────────┐       ┌─────────┐
 │ Admin console (RSC)  │◀───────▶│ Server Components  │◀─────▶│ Prisma  │
 │ Candidate workspace  │         │ Server Actions     │       └─────────┘
-│                      │         │  ├ requireAdmin()  │
+│                      │         │  ├ requireCapability│
 │  ┌────────────────┐  │         │  ├ requireCandidate│
 │  │ Monaco editor  │  │         │  └ Zod validation  │
 │  └────────────────┘  │         │ Session (HttpOnly) │
@@ -743,8 +748,11 @@ the rules are the feature:
 - The blind rule is asserted across every combination of blind / on-panel /
   submitted, plus the absolute one — another author's draft is unreadable on
   any stage configuration, by anyone.
-- A candidate gets nothing back from every exported pipeline and feedback
-  query, asserted directly rather than left to follow from the routing.
+- A candidate gets nothing back from every exported feedback and scorecard
+  query, asserted directly. For the pipeline read models the same property is
+  asserted one level down, on `visibleApplicationsWhere` and
+  `canViewApplication` in `test/unit/hiring/access.test.ts`, which every one of
+  them routes through.
 - Stage transitions, rubric immutability, revision snapshotting on edit, and
   the aggregation maths (weighting, mixed scales, the disagreement flag) each
   have their own suite.
@@ -870,6 +878,11 @@ Designed for, not built:
 - AI-assisted evaluation, question banks, randomisation, organisations/tenants,
   password-reset email, proctoring, plagiarism detection. (Candidate
   invitation email ships — see [Candidate invitation email](#candidate-invitation-email).)
+- **Scorecard autosave.** The candidate's code editor mirrors every keystroke
+  to `localStorage` and re-queues a failed save (`use-draft-autosave.ts`); the
+  scorecard form does none of that, so an interviewer who closes the tab loses
+  what they had typed. The hook already exists and is the obvious thing to
+  reuse.
 - **Feedback reminders.** The queue and the age are there; the nudge that
   actually makes a late scorecard arrive is not. The Mailjet transport is
   already wired, so this is a scheduler and a template.

@@ -17,12 +17,15 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../src/generated/prisma/client.js';
 import {
   SAMPLE_APPLICATION_PROGRESS,
+  SAMPLE_FEEDBACK,
   SAMPLE_INTERVIEW,
   SAMPLE_JOB_ROLE,
   SAMPLE_PIPELINE_STAGES,
   SAMPLE_PIPELINE_TEMPLATE,
   SAMPLE_QUESTIONS,
+  SAMPLE_RUBRIC,
   SAMPLE_STAFF,
+  SAMPLE_SUBMISSION_SOURCE,
 } from './seed-data.js';
 import type { Role } from '../src/generated/prisma/enums.js';
 
@@ -159,6 +162,8 @@ async function seedDemo(): Promise<void> {
   });
   console.info('✓ Interview assigned to candidate');
 
+  await seedSubmission({ interviewId: interview.id, candidateId: candidate.id });
+
   // A second candidate with nothing attached, so the "start an application"
   // picker on the board has somebody in it: the first candidate is mid-flight
   // by the time the seed finishes, and `listAssignableCandidates` rightly
@@ -232,30 +237,195 @@ async function ensureStaff(person: { email: string; name: string; role: Role }):
  * left alone — re-running the seed must not resurrect a round somebody skipped
  * or overwrite a status somebody set while walking the demo.
  */
-async function seedPipeline(ctx: { candidateId: string; assignmentId: string }): Promise<void> {
-  const recruiter = await ensureStaff(SAMPLE_STAFF.recruiter);
-  const hiringManager = await ensureStaff(SAMPLE_STAFF.hiringManager);
-  const interviewer = await ensureStaff(SAMPLE_STAFF.interviewer);
+/**
+ * The demo rubric, created once and published.
+ *
+ * Published rather than left as a draft: only a published version may be
+ * pinned to a stage, so a draft here would leave the demo in exactly the state
+ * this function exists to avoid.
+ *
+ * Returns the criterion ids keyed by name so the seeded scorecard can score
+ * against them without depending on their order.
+ */
+/**
+ * One real submission for the demo candidate, so the coding round has
+ * something behind it.
+ *
+ * The demo used to seed that round as COMPLETE with outcome ADVANCE while no
+ * submission existed at all: the pipeline asserted the assessment was done and
+ * advanced, and the stage page said nothing had been submitted. A reviewer
+ * opening the demo had no code to read, so the whole submission-review half of
+ * a coding round was unwalkable.
+ *
+ * The payload matches what the candidate's browser writes — see
+ * `src/features/submissions/stored-results.ts`, which parses it defensively
+ * and is very particular about `null` versus `undefined`.
+ */
+async function seedSubmission(ctx: { interviewId: string; candidateId: string }): Promise<void> {
+  const existing = await prisma.submission.findFirst({
+    where: { interviewId: ctx.interviewId, candidateId: ctx.candidateId },
+    select: { id: true },
+  });
+  if (existing) {
+    console.info('· Demo submission already exists.');
+    return;
+  }
 
-  // Whatever rubric authoring has already seeded, if anything. A stage
-  // template names a rubric and an instance freezes a version, so both halves
-  // are looked up here and both are optional: the demo is still walkable with
-  // no rubric at all, it just has nothing to score against.
-  const rubric = await prisma.rubric.findFirst({
-    where: { isActive: true, versions: { some: { isPublished: true } } },
-    orderBy: { createdAt: 'asc' },
+  const link = await prisma.interviewQuestion.findFirst({
+    where: { interviewId: ctx.interviewId },
+    orderBy: { position: 'asc' },
+    select: {
+      questionId: true,
+      question: {
+        select: {
+          title: true,
+          testCases: {
+            orderBy: { position: 'asc' },
+            select: {
+              id: true,
+              input: true,
+              expectedOutput: true,
+              description: true,
+              weight: true,
+            },
+          },
+        },
+      },
+    },
+  });
+  if (!link || link.question.testCases.length === 0) return;
+
+  const cases = link.question.testCases;
+  // All but the last pass, so the review screen has both a green and a red row
+  // to render and the score is a partial rather than a flat 100.
+  const tests = cases.map((testCase, index) => {
+    const passed = index < cases.length - 1;
+    return {
+      testCaseId: testCase.id,
+      description: testCase.description,
+      status: passed ? 'passed' : 'failed',
+      input: testCase.input,
+      expectedOutput: testCase.expectedOutput,
+      actualOutput: passed ? testCase.expectedOutput : '',
+      stderr: null,
+      errorMessage: null,
+      errorKind: null,
+      weight: testCase.weight,
+      durationMs: 3 + index,
+    };
+  });
+
+  const totalWeight = cases.reduce((sum, testCase) => sum + testCase.weight, 0);
+  const passedWeight = tests
+    .filter((test) => test.status === 'passed')
+    .reduce((sum, test) => sum + test.weight, 0);
+
+  await prisma.submission.create({
+    data: {
+      candidateId: ctx.candidateId,
+      interviewId: ctx.interviewId,
+      questionId: link.questionId,
+      language: 'JAVASCRIPT',
+      sourceCode: SAMPLE_SUBMISSION_SOURCE,
+      score: totalWeight === 0 ? 0 : Math.round((passedWeight / totalWeight) * 100),
+      passedCount: tests.filter((test) => test.status === 'passed').length,
+      totalCount: tests.length,
+      results: { tests, stdout: '', stderr: '', executionTimeMs: 11 },
+      submittedAt: new Date(Date.now() - 12 * DAY_MS),
+    },
+  });
+
+  // The assignment is the authority on a coding round's status, so it has to
+  // agree with the submission that now exists.
+  await prisma.interviewAssignment.update({
+    where: {
+      interviewId_candidateId: { interviewId: ctx.interviewId, candidateId: ctx.candidateId },
+    },
+    data: {
+      status: 'COMPLETED',
+      startedAt: new Date(Date.now() - 12 * DAY_MS),
+      completedAt: new Date(Date.now() - 12 * DAY_MS),
+    },
+  });
+
+  console.info(`✓ Submission seeded for "${link.question.title}"`);
+}
+
+async function ensureRubric(): Promise<{
+  rubricId: string;
+  rubricVersionId: string;
+  criterionIds: Record<string, string>;
+}> {
+  const existing = await prisma.rubric.findFirst({
+    where: { name: SAMPLE_RUBRIC.name },
     select: {
       id: true,
       versions: {
         where: { isPublished: true },
         orderBy: { version: 'desc' },
         take: 1,
-        select: { id: true },
+        select: { id: true, criteria: { select: { id: true, name: true } } },
       },
     },
   });
-  const rubricId = rubric?.id ?? null;
-  const rubricVersionId = rubric?.versions[0]?.id ?? null;
+
+  if (existing?.versions[0]) {
+    const version = existing.versions[0];
+    console.info(`· Rubric "${SAMPLE_RUBRIC.name}" already exists.`);
+    return {
+      rubricId: existing.id,
+      rubricVersionId: version.id,
+      criterionIds: Object.fromEntries(version.criteria.map((c) => [c.name, c.id])),
+    };
+  }
+
+  const rubric =
+    existing ??
+    (await prisma.rubric.create({
+      data: { name: SAMPLE_RUBRIC.name, description: SAMPLE_RUBRIC.description },
+      select: { id: true },
+    }));
+
+  const version = await prisma.rubricVersion.create({
+    data: {
+      rubricId: rubric.id,
+      version: 1,
+      isPublished: true,
+      publishedAt: new Date(),
+      notes: 'Seeded for the demo pipeline.',
+      criteria: {
+        create: SAMPLE_RUBRIC.criteria.map((criterion, position) => ({
+          name: criterion.name,
+          description: criterion.description,
+          weight: criterion.weight,
+          maxScore: criterion.maxScore,
+          position,
+        })),
+      },
+    },
+    select: { id: true, criteria: { select: { id: true, name: true } } },
+  });
+
+  console.info(`✓ Rubric "${SAMPLE_RUBRIC.name}" (v1, ${SAMPLE_RUBRIC.criteria.length} criteria)`);
+  return {
+    rubricId: rubric.id,
+    rubricVersionId: version.id,
+    criterionIds: Object.fromEntries(version.criteria.map((c) => [c.name, c.id])),
+  };
+}
+
+async function seedPipeline(ctx: { candidateId: string; assignmentId: string }): Promise<void> {
+  const recruiter = await ensureStaff(SAMPLE_STAFF.recruiter);
+  const hiringManager = await ensureStaff(SAMPLE_STAFF.hiringManager);
+  const interviewer = await ensureStaff(SAMPLE_STAFF.interviewer);
+
+  // The rubric is *created*, not looked up hopefully. An earlier version of
+  // this seed searched for "whatever rubric authoring has already seeded" —
+  // and nothing ever seeded one, so every demo stage pinned `null` and the
+  // whole rubric half of the product was unreachable without hand-authoring
+  // one first. It also never self-healed, because this function returns early
+  // once the demo application exists.
+  const { rubricId, rubricVersionId, criterionIds } = await ensureRubric();
 
   const existingTemplate = await prisma.pipelineTemplate.findFirst({
     where: { name: SAMPLE_PIPELINE_TEMPLATE.name },
@@ -327,6 +497,8 @@ async function seedPipeline(ctx: { candidateId: string; assignmentId: string }):
     'Hiring manager': [{ userId: hiringManager.id, role: 'LEAD' }],
   };
 
+  const stageIds: Record<string, string> = {};
+
   for (const [position, stage] of SAMPLE_PIPELINE_STAGES.entries()) {
     const progress = SAMPLE_APPLICATION_PROGRESS[position];
     if (!progress) continue;
@@ -354,12 +526,59 @@ async function seedPipeline(ctx: { candidateId: string; assignmentId: string }):
       },
     });
 
+    stageIds[stage.name] = created.id;
+
     const panel = panels[stage.name] ?? [];
     for (const seat of panel) {
       await prisma.stageInterviewer.create({
         data: { stageId: created.id, userId: seat.userId, role: seat.role },
       });
     }
+  }
+
+  // One submitted scorecard on the round that is awaiting feedback, written by
+  // the interviewer who leads it. Exactly one, because the second panellist
+  // opening that round is how the demo shows the blind rule *working* — two
+  // would show only its result.
+  const feedbackStageId = stageIds[SAMPLE_FEEDBACK.stageName];
+  if (feedbackStageId && rubricVersionId) {
+    const submittedAt = new Date(now - 2 * DAY_MS);
+    await prisma.feedback.create({
+      data: {
+        stageId: feedbackStageId,
+        authorId: interviewer.id,
+        status: 'SUBMITTED',
+        recommendation: SAMPLE_FEEDBACK.recommendation,
+        confidence: SAMPLE_FEEDBACK.confidence,
+        summary: SAMPLE_FEEDBACK.summary,
+        strengths: SAMPLE_FEEDBACK.strengths,
+        concerns: SAMPLE_FEEDBACK.concerns,
+        rubricVersionId,
+        submittedAt,
+        createdAt: submittedAt,
+        scores: {
+          create: Object.entries(SAMPLE_FEEDBACK.scores).flatMap(([name, entry]) => {
+            const criterionId = criterionIds[name];
+            // A criterion the rubric no longer carries is skipped rather than
+            // failing the seed: the fixture and the rubric are edited by hand
+            // and will drift.
+            return criterionId ? [{ criterionId, score: entry.score, note: entry.note }] : [];
+          }),
+        },
+      },
+    });
+    await prisma.auditEvent.create({
+      data: {
+        actorId: interviewer.id,
+        action: 'feedback.submitted',
+        entityType: 'Feedback',
+        entityId: feedbackStageId,
+        applicationId: application.id,
+        metadata: { recommendation: SAMPLE_FEEDBACK.recommendation },
+        createdAt: submittedAt,
+      },
+    });
+    console.info(`✓ Scorecard submitted on "${SAMPLE_FEEDBACK.stageName}" (1 of 2)`);
   }
 
   // Two events so the activity panel has something true to show rather than
