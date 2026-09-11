@@ -35,6 +35,7 @@ export const AUDIT = {
   DECISION_RECORDED: 'decision.recorded',
   DECISION_CHANGED: 'decision.changed',
   NOTE_ADDED: 'note.added',
+  NOTE_DELETED: 'note.deleted',
   COMMENT_ADDED: 'comment.added',
   RUBRIC_PUBLISHED: 'rubric.published',
 } as const;

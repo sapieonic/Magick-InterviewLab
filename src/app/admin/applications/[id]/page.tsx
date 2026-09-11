@@ -62,6 +62,7 @@ const EVENT_LABELS: Record<string, string> = {
   'decision.recorded': 'Decision recorded',
   'decision.changed': 'Decision changed',
   'note.added': 'Note added on a submission',
+  'note.deleted': 'Note removed from a submission',
   'comment.added': 'Note added',
 };
 

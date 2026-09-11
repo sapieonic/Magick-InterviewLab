@@ -532,11 +532,22 @@ export async function deleteSubmissionNoteAction(
     if (note.authorId !== viewer.id) throw new AuthorizationError();
     // Still object-level checked: authorship is not access, and a reviewer
     // who has since lost their seat should not be able to reach back in.
-    if (!(await resolveSubmissionScope(viewer, note.submissionId))) {
-      throw new NotFoundError('Submission');
-    }
+    const scope = await resolveSubmissionScope(viewer, note.submissionId);
+    if (!scope) throw new NotFoundError('Submission');
 
     await prisma.submissionNote.delete({ where: { id } });
+
+    // A deleted note is still a thing a reviewer did. Recording the removal
+    // costs nothing and keeps the trail honest — an audit log with a hole in
+    // it where someone retracted an opinion is worse than no log at all.
+    await record({
+      actorId: viewer.id,
+      action: AUDIT.NOTE_DELETED,
+      entityType: 'SubmissionNote',
+      entityId: id,
+      applicationId: scope.applicationId,
+      metadata: { submissionId: note.submissionId },
+    });
 
     revalidatePath(`/admin/submissions/${note.submissionId}`);
     return ok();

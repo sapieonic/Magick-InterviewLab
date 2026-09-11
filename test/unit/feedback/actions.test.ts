@@ -491,4 +491,21 @@ describe('submission notes', () => {
     expect(result.ok).toBe(true);
     expect(h.db.submissionNote.delete).toHaveBeenCalledWith({ where: { id: 'note1' } });
   });
+
+  /**
+   * A retraction is still a thing a reviewer did. An audit log with a hole in
+   * it exactly where someone withdrew an opinion is worse than no log at all.
+   */
+  it('records the removal, so a retracted note still leaves a trail', async () => {
+    allowSubmission();
+    h.db.submissionNote.findUnique.mockResolvedValue({
+      id: 'note1',
+      authorId: 'viewer',
+      submissionId: 'sub1',
+    });
+
+    await deleteSubmissionNoteAction(null, form({ id: 'note1' }));
+
+    expect(auditActions()).toContain('note.deleted');
+  });
 });

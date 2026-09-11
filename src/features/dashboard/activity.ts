@@ -57,6 +57,7 @@ const PHRASES: Record<AuditAction, ActivityPhrase> = {
   // fresh decision would make the history unreadable.
   'decision.changed': { verb: 'changed a recorded decision', tone: 'attention', icon: 'decision' },
   'note.added': { verb: 'left a note on a submission', tone: 'neutral', icon: 'note' },
+  'note.deleted': { verb: 'deleted a note on a submission', tone: 'negative', icon: 'note' },
   'comment.added': { verb: 'commented', tone: 'neutral', icon: 'comment' },
   'rubric.published': { verb: 'published a rubric version', tone: 'neutral', icon: 'rubric' },
 };

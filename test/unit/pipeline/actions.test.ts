@@ -134,10 +134,7 @@ describe('one active application per candidate and role', () => {
     h.db.application.findFirst.mockResolvedValue({ id: 'app-existing' });
 
     const result = failed(
-      await createApplicationAction(
-        null,
-        form({ candidateId: 'cand-1', jobRoleId: 'role-1' }),
-      ),
+      await createApplicationAction(null, form({ candidateId: 'cand-1', jobRoleId: 'role-1' })),
     );
 
     expect(result.error).toMatch(/already has an active application/i);
@@ -291,7 +288,11 @@ describe('deleteStageAction', () => {
       feedback: [],
     });
     // Whatever their positions were before, what comes back is 0,1,2.
-    h.db.stage.findMany.mockResolvedValue([{ id: 'stage-1' }, { id: 'stage-3' }, { id: 'stage-4' }]);
+    h.db.stage.findMany.mockResolvedValue([
+      { id: 'stage-1' },
+      { id: 'stage-3' },
+      { id: 'stage-4' },
+    ]);
 
     succeeded(await deleteStageAction(null, form({ id: 'stage-2' })));
 
@@ -364,7 +365,9 @@ describe('setStageStatusAction', () => {
   it('refuses an illegal transition', async () => {
     h.db.stage.findUnique.mockResolvedValue(stageRow({ status: 'COMPLETE' }));
 
-    const result = failed(await setStageStatusAction(null, form({ id: 'stage-2', status: 'PENDING' })));
+    const result = failed(
+      await setStageStatusAction(null, form({ id: 'stage-2', status: 'PENDING' })),
+    );
 
     expect(result.error).toMatch(/cannot become pending/i);
     expect(h.db.stage.update).not.toHaveBeenCalled();
@@ -373,7 +376,9 @@ describe('setStageStatusAction', () => {
   it('clears completedAt when a completed round is reopened', async () => {
     h.db.stage.findUnique.mockResolvedValue(stageRow({ status: 'COMPLETE' }));
 
-    succeeded(await setStageStatusAction(null, form({ id: 'stage-2', status: 'AWAITING_FEEDBACK' })));
+    succeeded(
+      await setStageStatusAction(null, form({ id: 'stage-2', status: 'AWAITING_FEEDBACK' })),
+    );
 
     const update = h.db.stage.update.mock.calls[0]?.[0] as {
       data: { completedAt: Date | null | undefined };
@@ -384,7 +389,11 @@ describe('setStageStatusAction', () => {
 
   it('refuses to hand-set progress on a coding round', async () => {
     h.db.stage.findUnique.mockResolvedValue(
-      stageRow({ type: 'CODING_ASSESSMENT', status: 'PENDING', assignment: { status: 'ASSIGNED' } }),
+      stageRow({
+        type: 'CODING_ASSESSMENT',
+        status: 'PENDING',
+        assignment: { status: 'ASSIGNED' },
+      }),
     );
 
     const result = failed(
