@@ -283,6 +283,7 @@ export async function getApplicationScorecard(
     // the viewer's own — is not evidence, so it is counted, never rendered.
     const readable = visibleFeedback(stage.feedback, context);
     const readableSubmitted = readable.filter((row) => row.status === 'SUBMITTED');
+    const readableIds = new Set(readable.map((row) => row.id));
 
     const status = effectiveStageStatus(stage);
     // The same denominator the board and the stage page use. A shadow is an
@@ -338,7 +339,7 @@ export async function getApplicationScorecard(
         // from a total, so it cannot go negative when the two counts are on
         // different bases — a shadow's readable scorecard is one such row.
         submitted: stage.feedback.filter(
-          (row) => row.status === 'SUBMITTED' && !readable.some((r) => r.id === row.id),
+          (row) => row.status === 'SUBMITTED' && !readableIds.has(row.id),
         ).length,
         reason: blindReason(context),
       },

@@ -97,6 +97,7 @@ export default async function ApplicationDetailPage({ params }: PageProps) {
   // decides whether the cross-link is offered at all — see the candidate link
   // at the foot of this page for the same pattern.
   const canReviewSubmissions = can(viewer.role, 'VIEW_ALL_APPLICATIONS');
+  const canReadDebrief = can(viewer.role, 'VIEW_ALL_APPLICATIONS');
 
   const [timeline, staff, owners, jobRoles, templates, rubrics, interviews] = await Promise.all([
     getApplicationTimeline(viewer, application.id),
@@ -137,9 +138,15 @@ export default async function ApplicationDetailPage({ params }: PageProps) {
           </span>
         }
         actions={
-          <Button asChild size="sm" variant="outline">
-            <Link href={`/admin/applications/${application.id}/scorecard`}>Scorecard</Link>
-          </Button>
+          // The debrief is gated on VIEW_ALL_APPLICATIONS: someone who sat one
+          // round does not read the whole process. An interviewer reaches *this*
+          // page through a panel seat, so the link has to be gated too, or it is
+          // a button that silently bounces them back to /admin.
+          canReadDebrief ? (
+            <Button asChild size="sm" variant="outline">
+              <Link href={`/admin/applications/${application.id}/scorecard`}>Scorecard</Link>
+            </Button>
+          ) : null
         }
       />
 
@@ -326,9 +333,11 @@ export default async function ApplicationDetailPage({ params }: PageProps) {
                 written reason, on the scorecard.
               </p>
             )}
-            <Button asChild size="sm" variant="outline" className="mt-3 w-full">
-              <Link href={`/admin/applications/${application.id}/scorecard`}>Open scorecard</Link>
-            </Button>
+            {canReadDebrief ? (
+              <Button asChild size="sm" variant="outline" className="mt-3 w-full">
+                <Link href={`/admin/applications/${application.id}/scorecard`}>Open scorecard</Link>
+              </Button>
+            ) : null}
           </Section>
 
           {/* The candidate record is admin-only, so the link is shown only to
