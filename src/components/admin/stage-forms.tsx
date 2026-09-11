@@ -288,7 +288,11 @@ export function StageList({
                 </Link>
               </div>
             ) : stage.type === 'CODING_ASSESSMENT' && editable ? (
-              <LinkAssessmentForm stageId={stage.id} interviews={interviews} />
+              <LinkAssessmentForm
+                stageId={stage.id}
+                stageName={stage.name}
+                interviews={interviews}
+              />
             ) : null}
 
             {editable ? (
@@ -337,7 +341,16 @@ function StageStatusForm({ stage }: { stage: StageListItem }) {
           ))}
         </Select>
       </div>
-      <SubmitButton size="sm" variant="outline" disabled={locked}>
+      {/* An application normally has several rounds, so every per-round control
+          needs the round in its accessible name. Without it a screen-reader
+          user tabbing the page hears "Set", "Record", "Add" over and over with
+          nothing saying which round they act on. */}
+      <SubmitButton
+        size="sm"
+        variant="outline"
+        disabled={locked}
+        aria-label={`Set status for ${stage.name}`}
+      >
         Set
       </SubmitButton>
       {stage.type === 'CODING_ASSESSMENT' ? (
@@ -379,7 +392,7 @@ function StageOutcomeForm({ stage }: { stage: StageListItem }) {
           ))}
         </Select>
       </div>
-      <SubmitButton size="sm" variant="outline">
+      <SubmitButton size="sm" variant="outline" aria-label={`Record outcome for ${stage.name}`}>
         Record
       </SubmitButton>
       <p className="text-muted-foreground w-full text-[11px]">
@@ -452,9 +465,11 @@ function StageEditForm({ stage }: { stage: StageListItem }) {
 
 function LinkAssessmentForm({
   stageId,
+  stageName,
   interviews,
 }: {
   stageId: string;
+  stageName: string;
   interviews: InterviewOption[];
 }) {
   if (interviews.length === 0) {
@@ -493,7 +508,7 @@ function LinkAssessmentForm({
           ))}
         </Select>
       </div>
-      <SubmitButton size="sm" variant="outline">
+      <SubmitButton size="sm" variant="outline" aria-label={`Attach an assessment to ${stageName}`}>
         Attach
       </SubmitButton>
     </ActionForm>
@@ -582,7 +597,7 @@ function PanelManager({
               </option>
             ))}
           </Select>
-          <SubmitButton size="sm" variant="outline">
+          <SubmitButton size="sm" variant="outline" aria-label={`Add panellist to ${stage.name}`}>
             <Plus className="size-3.5" aria-hidden />
             Add
           </SubmitButton>

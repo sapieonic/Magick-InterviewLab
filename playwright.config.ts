@@ -1,4 +1,15 @@
+import 'dotenv/config';
 import { defineConfig, devices } from '@playwright/test';
+
+/**
+ * `.env` is loaded here, not left to the shell.
+ *
+ * `test/e2e/helpers.ts` signs in with `ADMIN_EMAIL` / `ADMIN_PASSWORD`, and the
+ * seeded admin was created from the same variables. Without this import those
+ * reads fall through to their hard-coded fallbacks, every spec fails on the
+ * first sign-in with "Incorrect email or password", and the cause looks like a
+ * product bug rather than an unloaded env file.
+ */
 
 const PORT = Number(process.env.E2E_PORT ?? 3100);
 const baseURL = process.env.E2E_BASE_URL ?? `http://127.0.0.1:${PORT}`;

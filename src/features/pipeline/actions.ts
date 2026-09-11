@@ -133,6 +133,7 @@ interface StageRecord {
   type: StageType;
   position: number;
   status: StageStatus;
+  blindFeedback: boolean;
   assignmentStatus: AssignmentStatus | null;
   candidateId: string;
 }
@@ -147,6 +148,7 @@ async function loadStage(id: string): Promise<StageRecord> {
       type: true,
       position: true,
       status: true,
+      blindFeedback: true,
       assignment: { select: { status: true } },
       application: { select: { candidateId: true } },
     },
@@ -159,6 +161,7 @@ async function loadStage(id: string): Promise<StageRecord> {
     type: stage.type,
     position: stage.position,
     status: stage.status,
+    blindFeedback: stage.blindFeedback,
     assignmentStatus: stage.assignment?.status ?? null,
     candidateId: stage.application.candidateId,
   };
@@ -625,6 +628,35 @@ export async function updateStageAction(
 
     const stage = await loadStage(input.id);
 
+    // `blindFeedback` is the switch that makes the blind rule mean anything, so
+    // it is the one field on this form that the people it constrains must not
+    // be able to move. Two guards, both about the *unblinding* direction only —
+    // turning blind on is always safe and never restricted.
+    if (stage.blindFeedback && !input.blindFeedback) {
+      // Someone who owes a scorecard here would be unblinding themselves. Rank
+      // is no defence: an admin on the panel anchors exactly like anyone else,
+      // which is the whole premise of the rule.
+      const seat = await prisma.stageInterviewer.findUnique({
+        where: { stageId_userId: { stageId: stage.id, userId: viewer.id } },
+        select: { id: true },
+      });
+      if (seat) {
+        throw new AppError(
+          'You are on this panel, so you cannot turn blind feedback off for this round. Ask someone who is not on it.',
+        );
+      }
+
+      // And once anyone has written anything, unblinding retroactively exposes
+      // scorecards that were given under a promise of independence. The round
+      // has to be set up blind or not; it cannot be changed underneath people.
+      const written = await prisma.feedback.count({ where: { stageId: stage.id } });
+      if (written > 0) {
+        throw new AppError(
+          'Scorecards have already been started for this round, so blind feedback can no longer be switched off.',
+        );
+      }
+    }
+
     await prisma.stage.update({
       where: { id: input.id },
       data: {
@@ -640,7 +672,15 @@ export async function updateStageAction(
       entityType: 'Stage',
       entityId: stage.id,
       applicationId: stage.applicationId,
-      metadata: { name: input.name, scheduledAt: input.scheduledAt?.toISOString() ?? null },
+      metadata: {
+        name: input.name,
+        scheduledAt: input.scheduledAt?.toISOString() ?? null,
+        // Recorded unconditionally: a reader reconstructing why one panellist
+        // saw another's scorecard needs the flag's history, not just its
+        // current value.
+        blindFeedback: input.blindFeedback,
+        blindFeedbackChanged: stage.blindFeedback !== input.blindFeedback,
+      },
     });
 
     revalidateApplication(stage.applicationId);

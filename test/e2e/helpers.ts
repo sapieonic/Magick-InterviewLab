@@ -40,3 +40,29 @@ export async function signOut(page: Page): Promise<void> {
 export async function expectSignedOut(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/login/);
 }
+
+/**
+ * Every account an admin creates — staff or candidate — is born with
+ * `mustChangePassword`, so its first sign-in lands on /change-password rather
+ * than on the console. Rotate it and hand back a signed-in page.
+ *
+ * Same `toHaveURL` convention as `signIn`: the change-password form finishes
+ * with a Server Action `redirect()`, which is an RSC transition rather than a
+ * navigation, so `waitForURL` would wait for a load event that never fires.
+ */
+export async function signInAndRotatePassword(
+  page: Page,
+  email: string,
+  temporaryPassword: string,
+  newPassword: string,
+): Promise<void> {
+  await signIn(page, email, temporaryPassword);
+  await expect(page).toHaveURL(/\/change-password/, { timeout: 30_000 });
+
+  await page.getByLabel(/current password/i).fill(temporaryPassword);
+  await page.getByLabel(/^new password/i).fill(newPassword);
+  await page.getByLabel(/confirm/i).fill(newPassword);
+  await page.getByRole('button', { name: /update password/i }).click();
+
+  await expect(page).not.toHaveURL(/\/change-password/, { timeout: 30_000 });
+}
