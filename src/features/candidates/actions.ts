@@ -8,6 +8,7 @@ import { ok, type ActionResult } from '@/lib/action-result';
 import { requireAdmin } from '@/features/auth/guards';
 import { hashPassword } from '@/features/auth/password';
 import { destroyAllSessionsFor } from '@/features/auth/session';
+import { sendCandidateWelcomeEmail, type WelcomeEmailStatus } from './email';
 import {
   createCandidateSchema,
   resetCandidatePasswordSchema,
@@ -41,6 +42,9 @@ export interface CreatedCandidate {
   id: string;
   name: string;
   email: string;
+  /** Outcome of the invitation email, so the admin knows whether to hand the
+   *  password over themselves. Never a failure of the creation itself. */
+  emailStatus: WelcomeEmailStatus;
 }
 
 export async function createCandidateAction(
@@ -56,6 +60,7 @@ export async function createCandidateAction(
       email: formData.get('email'),
       temporaryPassword: formData.get('temporaryPassword'),
       interviewId: rawInterviewId === '' ? undefined : rawInterviewId,
+      sendWelcomeEmail: formData.get('sendWelcomeEmail') === 'true',
     });
 
     const existing = await prisma.user.findUnique({
@@ -64,16 +69,18 @@ export async function createCandidateAction(
     });
     if (existing) throw new AppError(DUPLICATE_EMAIL, { email: [DUPLICATE_EMAIL] });
 
+    let interviewTitle: string | undefined;
     if (input.interviewId) {
       const interview = await prisma.interview.findUnique({
         where: { id: input.interviewId },
-        select: { id: true },
+        select: { id: true, title: true },
       });
       if (!interview) {
         throw new AppError('That interview no longer exists.', {
           interviewId: ['That interview no longer exists.'],
         });
       }
+      interviewTitle = interview.title;
     }
 
     const candidate = await prisma.user.create({
@@ -92,13 +99,26 @@ export async function createCandidateAction(
       select: { id: true, name: true, email: true },
     });
 
+    // Deliberately after the commit and deliberately not awaited *inside* a
+    // transaction: the account is real from this point on, so a mail provider
+    // that is down degrades to the hand-over flow this feature replaces
+    // rather than failing a creation that has already happened.
+    const emailStatus = await sendCandidateWelcomeEmail({
+      name: candidate.name,
+      email: candidate.email,
+      temporaryPassword: input.temporaryPassword,
+      ...(interviewTitle ? { interviewTitle } : {}),
+      requested: input.sendWelcomeEmail,
+    });
+
     revalidateCandidate(candidate.id);
     if (input.interviewId) revalidatePath(`/admin/interviews/${input.interviewId}`);
 
     // The plaintext password is deliberately NOT echoed back: the browser
     // that submitted it already has it, and returning it would put it in the
-    // action result, the RSC payload and any error reporting downstream.
-    return ok(candidate);
+    // action result, the RSC payload and any error reporting downstream. The
+    // email status is a slug for the same reason.
+    return ok({ ...candidate, emailStatus });
   });
 }
 

@@ -31,6 +31,7 @@ browser IDE and run their code **entirely on their own machine**.
 - [Quick start](#quick-start)
 - [Environment variables](#environment-variables)
 - [The end-to-end workflow](#the-end-to-end-workflow)
+- [Candidate invitation email](#candidate-invitation-email)
 - [Code execution](#code-execution)
 - [Writing a question](#writing-a-question)
 - [Architecture](#architecture)
@@ -119,6 +120,12 @@ Every variable, what it does, and whether it is required.
 | `SEED_CANDIDATE_EMAIL`          | no          | `candidate@magicvoice.local` | no                 | Email for the seeded demo candidate.                                                                                                          |
 | `SEED_CANDIDATE_PASSWORD`       | no          | random                       | no                 | Password for the seeded candidate. If unset, one is generated and printed once.                                                               |
 | `SEED_DEMO_DATA`                | no          | `true`                       | no                 | Set `false` to seed only the admin.                                                                                                           |
+| `MAILJET_API_KEY`               | no          | —                            | no                 | Mailjet API key. Enables candidate invitation email. Required alongside the secret and sender.                                                |
+| `MAILJET_API_SECRET`            | no          | —                            | no                 | Mailjet API secret.                                                                                                                           |
+| `MAIL_FROM_EMAIL`               | no          | —                            | no                 | Sender address. Must be a Mailjet verified sender or verified domain.                                                                         |
+| `MAIL_FROM_NAME`                | no          | `MagicVoice InterviewLab`    | no                 | Display name on the `From` header.                                                                                                            |
+| `MAIL_REPLY_TO`                 | no          | —                            | no                 | `Reply-To` address, when replies should not go to the sender.                                                                                 |
+| `MAILJET_SANDBOX`               | no          | `false`                      | no                 | `true` makes Mailjet validate every message and deliver nothing.                                                                              |
 | `NEXT_PUBLIC_APP_NAME`          | no          | `MagicVoice`                 | **yes**            | Brand name in the UI.                                                                                                                         |
 | `NEXT_PUBLIC_APP_URL`           | no          | `http://localhost:3000`      | **yes**            | Canonical URL.                                                                                                                                |
 | `NEXT_PUBLIC_PYODIDE_INDEX_URL` | no          | jsDelivr CDN                 | **yes**            | Where the Python (Pyodide) runtime is fetched from. Point at your own host to run air-gapped.                                                 |
@@ -142,7 +149,9 @@ This is the flow the product is built around, and the one the
 3. Admin creates questions — _Reverse a String_, _Two Sum_, _Find the Duplicate_.
 4. Admin adds test cases to each question (input, expected output, weight).
 5. Admin adds the questions to the interview and orders them.
-6. Admin creates a candidate with an explicitly chosen temporary password.
+6. Admin creates a candidate with an explicitly chosen temporary password —
+   emailed to them when a mail provider is configured, handed over otherwise
+   (see [Candidate invitation email](#candidate-invitation-email)).
 7. Admin assigns the interview to the candidate.
 8. Candidate signs in and is required to choose a new password.
 9. Candidate opens a question, writes JavaScript or Python.
@@ -152,6 +161,43 @@ This is the flow the product is built around, and the one the
 13. Admin reviews the submission, its score and its per-test breakdown.
 
 The seed puts steps 2–7 in place already so you can jump straight to step 8.
+
+---
+
+## Candidate invitation email
+
+Optional, and off unless configured. With `MAILJET_API_KEY`,
+`MAILJET_API_SECRET` and `MAIL_FROM_EMAIL` all set, the **New candidate**
+screen offers _"Email the sign-in details to the candidate"_ (ticked by
+default). The message carries the sign-in URL, the candidate's email and the
+temporary password, and names the interview if one was assigned at creation.
+
+Set **all three or none**. A partial configuration is refused at startup —
+the alternative is an admin ticking a checkbox that can never deliver
+anything, with the only trace a log line nobody reads.
+
+Three decisions worth knowing:
+
+- **The email contains the temporary password.** The alternative — "your
+  administrator will be in touch" — leaves exactly the out-of-band handover
+  this feature exists to remove. What makes it defensible is that the
+  credential is single-use by construction: the account is created with
+  `mustChangePassword`, so the candidate replaces it at first sign-in and the
+  value sitting in their mailbox stops working at that moment. The transport
+  never logs a message body for the same reason.
+- **A failed send is not a failed creation.** The send runs after the row is
+  committed, so a Mailjet outage leaves an account that exists and an admin
+  who is told to hand the password over — which is precisely the flow that
+  existed before this feature. The password is shown on screen either way.
+- **`MAILJET_SANDBOX=true`** has Mailjet authenticate and validate every
+  message but deliver nothing. The admin is told the email was sandboxed
+  rather than sent, so a staging deployment cannot look like it is mailing
+  real candidates.
+
+Mailjet is spoken to over `fetch` (Send API v3.1) rather than through
+`node-mailjet`: one authenticated POST is the whole surface, and v3.1 reports
+a rejected recipient _inside_ a 200-family response — so `src/lib/email/mailjet.ts`
+reads the per-message `Status`, not `response.ok`.
 
 ---
 
@@ -382,7 +428,7 @@ this application never needs rich option rendering.
 | User enumeration    | Login returns one message for unknown-email and wrong-password, and performs a dummy Argon2 verification on the unknown-email path so the timing matches. Account-inactive is only reported _after_ a correct password.                                                                                                                                                                                                   |
 | Open redirect       | `?next=` is honoured only for same-origin absolute paths.                                                                                                                                                                                                                                                                                                                                                                 |
 | Input validation    | Zod at every network boundary, server-side, before any database call.                                                                                                                                                                                                                                                                                                                                                     |
-| Secret exposure     | `server-only` on the server env module makes a browser import a build failure.                                                                                                                                                                                                                                                                                                                                            |
+| Secret exposure     | `server-only` on the server env module makes a browser import a build failure. The Mailjet transport never logs a message body — a candidate invitation carries a plaintext temporary password.                                                                                                                                                                                                                           |
 | Candidate code      | Runs in the candidate's browser, never on the server, so it cannot reach the server's environment, filesystem, database or internal network. Both workers additionally revoke `fetch`/`XMLHttpRequest`/`WebSocket`/storage (the Python worker after Pyodide loads, which also closes the `js.fetch` bridge) — honest-mistake hardening, not a boundary, since a candidate can always read their own browser's test cases. |
 | XSS                 | Markdown is escaped before rendering; candidate source code and program output are rendered as text, never as HTML.                                                                                                                                                                                                                                                                                                       |
 | Headers             | `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy` set globally.                                                                                                                                                                                                                                                                                                                  |
@@ -512,6 +558,7 @@ src/
     dashboard/             dashboard aggregates
   lib/
     db/                    Prisma client singleton
+    email/                 Mailjet transport + message templates
     validation/            Zod schemas
     env.ts / env.server.ts browser-safe vs server-only configuration
 test/
@@ -534,7 +581,8 @@ Designed for, not built:
 - Additional languages (C, C++, Java, Go, Rust) — a new executor, no UI change.
 - Hidden tests, partial credit, custom graders — the `Grader` interface exists.
 - AI-assisted evaluation, question banks, randomisation, organisations/tenants,
-  invitation and password-reset email, proctoring, plagiarism detection.
+  password-reset email, proctoring, plagiarism detection. (Candidate
+  invitation email ships — see [Candidate invitation email](#candidate-invitation-email).)
 
 None of these are stubbed. The seams are there; the code is not.
 

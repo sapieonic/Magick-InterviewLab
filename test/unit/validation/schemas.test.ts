@@ -105,6 +105,22 @@ describe('createCandidateSchema', () => {
     const result = parsed(createCandidateSchema.safeParse({ ...valid, interviewId: 'int-1' }));
     expect(result.interviewId).toBe('int-1');
   });
+
+  /**
+   * An unticked checkbox submits no field at all, so the absent case is the
+   * one that decides whether a candidate who was not meant to be emailed is
+   * emailed anyway. It has to default to *not sending*.
+   */
+  it('defaults the welcome email to off when the field is absent', () => {
+    expect(parsed(createCandidateSchema.safeParse(valid)).sendWelcomeEmail).toBe(false);
+  });
+
+  it('carries an explicit welcome-email choice through', () => {
+    expect(
+      parsed(createCandidateSchema.safeParse({ ...valid, sendWelcomeEmail: true }))
+        .sendWelcomeEmail,
+    ).toBe(true);
+  });
 });
 
 describe('interviewInputSchema', () => {

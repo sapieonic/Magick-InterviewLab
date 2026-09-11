@@ -16,6 +16,8 @@ import { MIN_PASSWORD_LENGTH } from '@/features/auth/password-policy';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import { Alert } from '@/components/ui/alert';
 import { Field, FormAlert, SubmitButton } from '@/components/admin/form';
 import { ActionForm, HiddenFields } from '@/components/admin/action-form';
@@ -123,10 +125,60 @@ function TemporaryPasswordField({
   );
 }
 
+/**
+ * What the admin is told about the invitation.
+ *
+ * `failed` is not an error banner: the candidate exists and the password is
+ * on screen, so the outcome is "you are handing this over yourself", which is
+ * a warning about the next step rather than a report that something broke.
+ *
+ * The status type is read off the action's result rather than imported from
+ * the (server-only) email module — nothing here needs that module, and a
+ * type-only import is an easy thing for a later edit to turn into a value one.
+ */
+function WelcomeEmailNote({
+  status,
+  email,
+}: {
+  status: CreatedCandidate['emailStatus'];
+  email: string;
+}) {
+  switch (status) {
+    case 'sent':
+      return (
+        <Alert tone="success">
+          The sign-in details were emailed to <strong>{email}</strong>.
+        </Alert>
+      );
+    case 'sandboxed':
+      return (
+        <Alert tone="info">
+          Mailjet accepted the email in sandbox mode, so nothing was delivered to{' '}
+          <strong>{email}</strong>. Share the password yourself, or unset{' '}
+          <code>MAILJET_SANDBOX</code> to send for real.
+        </Alert>
+      );
+    case 'failed':
+      return (
+        <Alert tone="warning" title="The invitation email could not be sent">
+          The account was created — only the email failed. Share the password below yourself; the
+          server log has the reason.
+        </Alert>
+      );
+    case 'not_requested':
+    case 'not_configured':
+      return null;
+  }
+}
+
 export function CandidateCreateForm({
   interviews,
+  emailEnabled,
 }: {
   interviews: Array<{ id: string; title: string; status: InterviewStatus }>;
+  /** False when the deployment has no Mailjet credentials: offering a
+   *  checkbox that cannot send anything is worse than not offering one. */
+  emailEnabled: boolean;
 }) {
   const [state, setState] = useState<ActionResult<CreatedCandidate> | null>(null);
   const [password, setPassword] = useState('');
@@ -147,6 +199,7 @@ export function CandidateCreateForm({
   if (created && revealed) {
     return (
       <div className="space-y-4">
+        <WelcomeEmailNote status={created.emailStatus} email={created.email} />
         <RevealedPassword password={revealed}>
           <p>
             {created.name} ({created.email}) can sign in now and will be asked to choose their own
@@ -225,6 +278,23 @@ export function CandidateCreateForm({
           ))}
         </Select>
       </Field>
+
+      {emailEnabled ? (
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2">
+            {/* An unchecked box submits no field at all, which the server
+                reads as false — so the value only ever travels when ticked. */}
+            <Checkbox id="sendWelcomeEmail" name="sendWelcomeEmail" value="true" defaultChecked />
+            <Label htmlFor="sendWelcomeEmail" className="cursor-pointer font-normal">
+              Email the sign-in details to the candidate
+            </Label>
+          </div>
+          <p className="text-muted-foreground text-[12px]">
+            Sends the temporary password to their inbox. They must still replace it at first
+            sign-in, and it is shown here either way.
+          </p>
+        </div>
+      ) : null}
 
       <div className="flex gap-2 pt-1">
         <SubmitButton>Create candidate</SubmitButton>

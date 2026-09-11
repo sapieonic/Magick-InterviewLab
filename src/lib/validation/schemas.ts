@@ -58,6 +58,10 @@ export const createCandidateSchema = z.object({
   email: emailSchema,
   temporaryPassword: passwordSchema,
   interviewId: z.string().max(64).optional(),
+  // An unchecked checkbox submits nothing at all, so absent must mean false
+  // here — a `z.boolean()` default of true would silently mail a candidate an
+  // admin had chosen not to mail.
+  sendWelcomeEmail: z.boolean().default(false),
 });
 
 export const updateCandidateSchema = z.object({
