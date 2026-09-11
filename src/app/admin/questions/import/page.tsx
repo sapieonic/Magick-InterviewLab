@@ -1,12 +1,12 @@
 import type { Metadata } from 'next';
-import { requireAdminPage } from '@/features/auth/guards';
+import { requireCapabilityPage } from '@/features/auth/guards';
 import { PageHeader } from '@/components/admin/page-header';
 import { QuestionImporter } from '@/components/admin/question-importer';
 
 export const metadata: Metadata = { title: 'Import questions' };
 
 export default async function ImportQuestionsPage() {
-  await requireAdminPage();
+  await requireCapabilityPage('MANAGE_CONTENT');
   return (
     <>
       <PageHeader

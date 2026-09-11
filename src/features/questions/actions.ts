@@ -7,7 +7,7 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/db/prisma';
 import { actionGuard, AppError, NotFoundError } from '@/lib/errors';
 import { ok, type ActionResult } from '@/lib/action-result';
-import { requireAdmin } from '@/features/auth/guards';
+import { requireCapability } from '@/features/auth/guards';
 import { cuidSchema, questionInputSchema, questionManifestSchema } from '@/lib/validation/schemas';
 import { starterCodeKey } from './queries';
 
@@ -36,7 +36,7 @@ export interface SavedQuestion {
  */
 export async function saveQuestionAction(payload: unknown): Promise<ActionResult<SavedQuestion>> {
   return actionGuard(async () => {
-    await requireAdmin();
+    await requireCapability('MANAGE_CONTENT');
     const input = saveQuestionSchema.parse(payload);
 
     // Drop starter code for languages the question no longer supports, so an
@@ -148,7 +148,7 @@ export async function importQuestionsAction(
   payload: unknown,
 ): Promise<ActionResult<ImportSummary>> {
   return actionGuard(async () => {
-    await requireAdmin();
+    await requireCapability('MANAGE_CONTENT');
     const manifest = questionManifestSchema.parse(payload);
 
     // A manifest that lists the same title twice is almost always a mistake;
@@ -244,7 +244,7 @@ export async function deleteQuestionAction(
   formData: FormData,
 ): Promise<ActionResult<undefined>> {
   return actionGuard(async () => {
-    await requireAdmin();
+    await requireCapability('MANAGE_CONTENT');
     const id = cuidSchema.parse(formData.get('id'));
 
     const existing = await prisma.question.findUnique({ where: { id }, select: { id: true } });

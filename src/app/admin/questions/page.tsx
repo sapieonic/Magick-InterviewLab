@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { requireAdminPage } from '@/features/auth/guards';
+import { requireCapabilityPage } from '@/features/auth/guards';
 import Link from 'next/link';
 import { FileQuestion, Plus, Upload } from 'lucide-react';
 import { listQuestions } from '@/features/questions/queries';
@@ -20,7 +20,7 @@ import { formatDate } from '@/lib/utils';
 export const metadata: Metadata = { title: 'Questions' };
 
 export default async function QuestionsPage() {
-  await requireAdminPage();
+  await requireCapabilityPage('MANAGE_CONTENT');
   const questions = await listQuestions();
 
   return (

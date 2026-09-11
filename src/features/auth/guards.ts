@@ -1,6 +1,7 @@
 import 'server-only';
 import { redirect } from 'next/navigation';
 import { getCurrentUser, type SessionUser } from './session';
+import { can, isStaff, type Capability } from './capabilities';
 
 /**
  * Authorization is enforced here, on the server, for every protected page and
@@ -41,14 +42,31 @@ export async function requireUser(): Promise<SessionUser> {
   return user;
 }
 
-export async function requireAdmin(): Promise<SessionUser> {
+/**
+ * The general form: assert one capability.
+ *
+ * Every staff mutation goes through here rather than comparing roles, so
+ * adding a role is a one-line change to the grant table instead of an audit of
+ * every Server Action.
+ */
+export async function requireCapability(capability: Capability): Promise<SessionUser> {
   const user = await requireUser();
-  if (user.role !== 'ADMIN') throw new AuthorizationError();
-  // A temporary password must be rotated before any admin mutation: the
-  // page-level guard sends admins to /change-password, but a Server Action is
+  if (!can(user.role, capability)) throw new AuthorizationError();
+  // A temporary password must be rotated before any staff mutation: the
+  // page-level guard sends staff to /change-password, but a Server Action is
   // a public endpoint reachable without ever loading a page.
   if (user.mustChangePassword) throw new PasswordChangeRequiredError();
   return user;
+}
+
+/** Account administration and content authoring — admins only. */
+export async function requireAdmin(): Promise<SessionUser> {
+  return requireCapability('MANAGE_USERS');
+}
+
+/** Any signed-in staff member, whatever their role. */
+export async function requireStaff(): Promise<SessionUser> {
+  return requireCapability('ACCESS_CONSOLE');
 }
 
 export async function requireCandidate(): Promise<SessionUser> {
@@ -61,14 +79,32 @@ export async function requireCandidate(): Promise<SessionUser> {
 }
 
 /** For pages: redirects to the right place instead of throwing. */
-export async function requireAdminPage(): Promise<SessionUser> {
+/**
+ * Page-level capability guard.
+ *
+ * A staff member who lacks the capability is sent to the console home rather
+ * than to `/interview` — they are not a candidate, and bouncing an interviewer
+ * into a candidate's workspace is a confusing dead end.
+ */
+export async function requireCapabilityPage(capability: Capability): Promise<SessionUser> {
   const user = await getCurrentUser();
-  if (!user) redirect('/login?next=/admin');
-  if (user.role !== 'ADMIN') redirect('/interview');
+  if (!user) redirect(`/login?next=/admin`);
+  if (!isStaff(user.role)) redirect('/interview');
   // A seeded admin is created with a temporary password; force the rotation
   // before the console is usable, exactly as requireCandidatePage does.
   if (user.mustChangePassword) redirect('/change-password');
+  if (!can(user.role, capability)) redirect('/admin');
   return user;
+}
+
+/** Admin-only pages: accounts, questions, interviews, rubric authoring. */
+export async function requireAdminPage(): Promise<SessionUser> {
+  return requireCapabilityPage('MANAGE_USERS');
+}
+
+/** Any console page a staff member of any role may open. */
+export async function requireStaffPage(): Promise<SessionUser> {
+  return requireCapabilityPage('ACCESS_CONSOLE');
 }
 
 export async function requireCandidatePage(): Promise<SessionUser> {
@@ -81,5 +117,5 @@ export async function requireCandidatePage(): Promise<SessionUser> {
 
 export function homePathFor(user: Pick<SessionUser, 'role' | 'mustChangePassword'>): string {
   if (user.mustChangePassword) return '/change-password';
-  return user.role === 'ADMIN' ? '/admin' : '/interview';
+  return isStaff(user.role) ? '/admin' : '/interview';
 }

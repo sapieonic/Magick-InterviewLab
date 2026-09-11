@@ -6,7 +6,7 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/db/prisma';
 import { actionGuard, AppError, NotFoundError } from '@/lib/errors';
 import { ok, type ActionResult } from '@/lib/action-result';
-import { requireAdmin } from '@/features/auth/guards';
+import { requireCapability } from '@/features/auth/guards';
 import {
   assignInterviewSchema,
   cuidSchema,
@@ -37,7 +37,7 @@ export async function createInterviewAction(
   formData: FormData,
 ): Promise<ActionResult<undefined>> {
   return actionGuard(async () => {
-    await requireAdmin();
+    await requireCapability('MANAGE_CONTENT');
     const input = readInterviewForm(formData);
 
     const interview = await prisma.interview.create({
@@ -57,7 +57,7 @@ export async function updateInterviewAction(
   formData: FormData,
 ): Promise<ActionResult<undefined>> {
   return actionGuard(async () => {
-    await requireAdmin();
+    await requireCapability('MANAGE_CONTENT');
     const id = cuidSchema.parse(formData.get('id'));
     const input = readInterviewForm(formData);
 
@@ -77,7 +77,7 @@ export async function archiveInterviewAction(
   formData: FormData,
 ): Promise<ActionResult<undefined>> {
   return actionGuard(async () => {
-    await requireAdmin();
+    await requireCapability('MANAGE_CONTENT');
     const id = cuidSchema.parse(formData.get('id'));
 
     const existing = await prisma.interview.findUnique({ where: { id }, select: { id: true } });
@@ -98,7 +98,7 @@ export async function addInterviewQuestionAction(
   formData: FormData,
 ): Promise<ActionResult<undefined>> {
   return actionGuard(async () => {
-    await requireAdmin();
+    await requireCapability('MANAGE_CONTENT');
     const interviewId = cuidSchema.parse(formData.get('interviewId'));
     const questionId = cuidSchema.parse(formData.get('questionId'));
 
@@ -134,7 +134,7 @@ export async function removeInterviewQuestionAction(
   formData: FormData,
 ): Promise<ActionResult<undefined>> {
   return actionGuard(async () => {
-    await requireAdmin();
+    await requireCapability('MANAGE_CONTENT');
     const interviewId = cuidSchema.parse(formData.get('interviewId'));
     const questionId = cuidSchema.parse(formData.get('questionId'));
 
@@ -173,7 +173,7 @@ export async function reorderInterviewQuestionsAction(
   payload: unknown,
 ): Promise<ActionResult<undefined>> {
   return actionGuard(async () => {
-    await requireAdmin();
+    await requireCapability('MANAGE_CONTENT');
     const input = reorderQuestionsSchema.parse(payload);
 
     const existing = await prisma.interviewQuestion.findMany({
@@ -206,7 +206,7 @@ export async function assignInterviewAction(
   formData: FormData,
 ): Promise<ActionResult<undefined>> {
   return actionGuard(async () => {
-    await requireAdmin();
+    await requireCapability('MANAGE_PIPELINE');
     const input = assignInterviewSchema.parse({
       candidateId: formData.get('candidateId'),
       interviewId: formData.get('interviewId'),
@@ -249,7 +249,7 @@ export async function unassignInterviewAction(
   formData: FormData,
 ): Promise<ActionResult<undefined>> {
   return actionGuard(async () => {
-    await requireAdmin();
+    await requireCapability('MANAGE_PIPELINE');
     const input = assignInterviewSchema.parse({
       candidateId: formData.get('candidateId'),
       interviewId: formData.get('interviewId'),

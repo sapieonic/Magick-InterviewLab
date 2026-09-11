@@ -46,6 +46,22 @@ const MODEL_NAMES = [
   'interviewAssignment',
   'submission',
   'codeDraft',
+  'jobRole',
+  'pipelineTemplate',
+  'pipelineStageTemplate',
+  'application',
+  'stage',
+  'stageInterviewer',
+  'rubric',
+  'rubricVersion',
+  'rubricCriterion',
+  'feedback',
+  'feedbackScore',
+  'feedbackRevision',
+  'submissionNote',
+  'applicationComment',
+  'decision',
+  'auditEvent',
 ] as const;
 
 export type PrismaModelMethod = (typeof MODEL_METHODS)[number];
