@@ -18,6 +18,7 @@ const h = await vi.hoisted(async () => {
     revalidatePath: vitest.fn(),
     getCurrentUser: vitest.fn(),
     destroyAllSessionsFor: vitest.fn(),
+    sendCandidateWelcomeEmail: vitest.fn(),
   };
 });
 
@@ -30,6 +31,12 @@ vi.mock('next/cache', () => ({ revalidatePath: h.revalidatePath }));
 vi.mock('@/features/auth/session', () => ({
   getCurrentUser: h.getCurrentUser,
   destroyAllSessionsFor: h.destroyAllSessionsFor,
+}));
+// Stubbed at the feature seam rather than at `fetch`: what the action owes
+// the candidate row is *which* invitation it asks for and what it does with
+// the answer. Mailjet's wire format is pinned in test/unit/email.
+vi.mock('@/features/candidates/email', () => ({
+  sendCandidateWelcomeEmail: h.sendCandidateWelcomeEmail,
 }));
 
 import { resetPrismaMock } from '../../helpers/prisma-mock';
@@ -72,6 +79,14 @@ function createdUserData(): Record<string, unknown> {
   return call.data;
 }
 
+/** The single argument of the one `sendCandidateWelcomeEmail` call. */
+function welcomeEmailInput(): Record<string, unknown> {
+  const call = h.sendCandidateWelcomeEmail.mock.calls[0]?.[0] as
+    Record<string, unknown> | undefined;
+  if (!call) throw new Error('expected the welcome email to have been attempted');
+  return call;
+}
+
 function updatedUserData(): Record<string, unknown> {
   const call = h.db.user.update.mock.calls[0]?.[0] as { data: Record<string, unknown> } | undefined;
   if (!call) throw new Error('expected prisma.user.update to have been called');
@@ -83,6 +98,8 @@ beforeEach(() => {
   h.revalidatePath.mockReset();
   h.getCurrentUser.mockReset();
   h.destroyAllSessionsFor.mockReset();
+  h.sendCandidateWelcomeEmail.mockReset();
+  h.sendCandidateWelcomeEmail.mockResolvedValue('not_requested');
   h.getCurrentUser.mockResolvedValue(actor());
 });
 
@@ -275,6 +292,203 @@ describe('createCandidateAction', () => {
     expect(result.fieldErrors?.temporaryPassword).toBeDefined();
     expect(h.db.user.findUnique).not.toHaveBeenCalled();
     expect(h.db.user.create).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The invitation email.
+ *
+ * Two properties carry the weight. The candidate must not be emailed unless
+ * the admin asked — an unticked checkbox submits no field at all, so "absent"
+ * is the case that decides it. And the send happens *after* the row is
+ * committed, so its failure is information for the admin, never a failed
+ * creation of an account that now exists.
+ */
+describe('createCandidateAction — the welcome email', () => {
+  beforeEach(() => {
+    h.db.user.findUnique.mockResolvedValue(null);
+    h.db.user.create.mockResolvedValue({ id: 'cand-1', name: 'Ada', email: 'ada@example.com' });
+  });
+
+  it('asks for the invitation when the checkbox was ticked', async () => {
+    h.sendCandidateWelcomeEmail.mockResolvedValue('sent');
+
+    const result = await createCandidateAction(
+      null,
+      form({
+        name: 'Ada',
+        email: 'ada@example.com',
+        temporaryPassword: VALID_PASSWORD,
+        sendWelcomeEmail: 'true',
+      }),
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      data: { id: 'cand-1', name: 'Ada', email: 'ada@example.com', emailStatus: 'sent' },
+    });
+    expect(welcomeEmailInput()).toMatchObject({
+      requested: true,
+      email: 'ada@example.com',
+      temporaryPassword: VALID_PASSWORD,
+    });
+  });
+
+  // The whole point of the default: a form that omits the field must not mail
+  // a candidate the admin chose not to mail.
+  it('does not request one when the field is absent', async () => {
+    await createCandidateAction(
+      null,
+      form({ name: 'Ada', email: 'ada@example.com', temporaryPassword: VALID_PASSWORD }),
+    );
+
+    expect(welcomeEmailInput().requested).toBe(false);
+  });
+
+  // An HTML checkbox can only be absent or carry its value; anything else
+  // reaching the action is not a tick.
+  it('treats any value other than "true" as not requested', async () => {
+    await createCandidateAction(
+      null,
+      form({
+        name: 'Ada',
+        email: 'ada@example.com',
+        temporaryPassword: VALID_PASSWORD,
+        sendWelcomeEmail: 'on',
+      }),
+    );
+
+    expect(welcomeEmailInput().requested).toBe(false);
+  });
+
+  it('passes the assigned interview title and duration so the email can name them', async () => {
+    h.db.interview.findUnique.mockResolvedValue({
+      id: 'int-1',
+      title: 'Backend screen',
+      durationMinutes: 60,
+    });
+
+    await createCandidateAction(
+      null,
+      form({
+        name: 'Ada',
+        email: 'ada@example.com',
+        temporaryPassword: VALID_PASSWORD,
+        interviewId: 'int-1',
+        sendWelcomeEmail: 'true',
+      }),
+    );
+
+    expect(welcomeEmailInput().interviewTitle).toBe('Backend screen');
+    // The countdown starts when the candidate opens the workspace and is
+    // never reset, so the email has to be able to warn them.
+    expect(welcomeEmailInput().interviewDurationMinutes).toBe(60);
+  });
+
+  it('omits the duration for an untimed interview rather than sending a zero', async () => {
+    h.db.interview.findUnique.mockResolvedValue({
+      id: 'int-1',
+      title: 'Backend screen',
+      durationMinutes: null,
+    });
+
+    await createCandidateAction(
+      null,
+      form({
+        name: 'Ada',
+        email: 'ada@example.com',
+        temporaryPassword: VALID_PASSWORD,
+        interviewId: 'int-1',
+        sendWelcomeEmail: 'true',
+      }),
+    );
+
+    expect(welcomeEmailInput()).not.toHaveProperty('interviewDurationMinutes');
+  });
+
+  /**
+   * The candidate row is already committed when the send runs. Reporting a
+   * mail failure as a failed action would tell the admin nothing happened,
+   * about an account that exists and whose password only their browser holds.
+   */
+  it('still succeeds, reporting the failure as a status, when the email cannot be sent', async () => {
+    h.sendCandidateWelcomeEmail.mockResolvedValue('failed');
+
+    const result = await createCandidateAction(
+      null,
+      form({
+        name: 'Ada',
+        email: 'ada@example.com',
+        temporaryPassword: VALID_PASSWORD,
+        sendWelcomeEmail: 'true',
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.data.emailStatus).toBe('failed');
+    expect(h.db.user.create).toHaveBeenCalledTimes(1);
+    // The list still has to reflect the new candidate — a failed email must
+    // not cost the admin the cache invalidation either.
+    expect(h.revalidatePath).toHaveBeenCalledWith('/admin/candidates');
+  });
+
+  // Nothing may be emailed for a creation that was refused before the insert.
+  it('attempts nothing when the creation itself fails', async () => {
+    h.db.user.findUnique.mockResolvedValue({ id: 'existing-1' });
+
+    await createCandidateAction(
+      null,
+      form({
+        name: 'Ada',
+        email: 'ada@example.com',
+        temporaryPassword: VALID_PASSWORD,
+        sendWelcomeEmail: 'true',
+      }),
+    );
+
+    expect(h.sendCandidateWelcomeEmail).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The one path with no second line of defence. The row is committed, so an
+   * escape here is reported as "Something went wrong" — an account that
+   * exists, and a plaintext password lost from the only screen that shows it.
+   */
+  it('still returns the candidate when the mailer rejects outright', async () => {
+    h.sendCandidateWelcomeEmail.mockRejectedValue(new Error('boom'));
+
+    const result = await createCandidateAction(
+      null,
+      form({
+        name: 'Ada',
+        email: 'ada@example.com',
+        temporaryPassword: VALID_PASSWORD,
+        sendWelcomeEmail: 'true',
+      }),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.data.id).toBe('cand-1');
+  });
+
+  /**
+   * The password reaches the mailer because that is the message; it must not
+   * also reach the action result, which travels back through the RSC payload.
+   */
+  it('keeps the plaintext password out of the result it returns', async () => {
+    h.sendCandidateWelcomeEmail.mockResolvedValue('sent');
+
+    const result = await createCandidateAction(
+      null,
+      form({
+        name: 'Ada',
+        email: 'ada@example.com',
+        temporaryPassword: VALID_PASSWORD,
+        sendWelcomeEmail: 'true',
+      }),
+    );
+
+    expect(JSON.stringify(result)).not.toContain(VALID_PASSWORD);
   });
 });
 

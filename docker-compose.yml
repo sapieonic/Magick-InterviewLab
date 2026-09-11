@@ -110,6 +110,19 @@ services:
       SEED_CANDIDATE_PASSWORD: ${SEED_CANDIDATE_PASSWORD:-}
       SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
 
+      # --- outbound email (Mailjet) ---
+      # Compose enumerates the app's environment explicitly, so these have to
+      # be listed here or a compose deployment could never enable email.
+      # Unset resolves to an empty string, which the app reads as "not
+      # configured" — so the default stays email-off rather than a partial
+      # configuration the server would refuse to start with.
+      MAILJET_API_KEY: ${MAILJET_API_KEY:-}
+      MAILJET_API_SECRET: ${MAILJET_API_SECRET:-}
+      MAIL_FROM_EMAIL: ${MAIL_FROM_EMAIL:-}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-}
+      MAIL_REPLY_TO: ${MAIL_REPLY_TO:-}
+      MAILJET_SANDBOX: ${MAILJET_SANDBOX:-false}
+
       # --- public (read server-side; the browser gets the build-arg values) ---
       NEXT_PUBLIC_APP_NAME: ${NEXT_PUBLIC_APP_NAME:-MagicVoice}
       NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}

@@ -8,6 +8,7 @@ import { ok, type ActionResult } from '@/lib/action-result';
 import { requireAdmin } from '@/features/auth/guards';
 import { hashPassword } from '@/features/auth/password';
 import { destroyAllSessionsFor } from '@/features/auth/session';
+import { sendCandidateWelcomeEmail, type WelcomeEmailStatus } from './email';
 import {
   createCandidateSchema,
   resetCandidatePasswordSchema,
@@ -41,6 +42,26 @@ export interface CreatedCandidate {
   id: string;
   name: string;
   email: string;
+  /** Outcome of the invitation email, so the admin knows whether to hand the
+   *  password over themselves. Never a failure of the creation itself. */
+  emailStatus: WelcomeEmailStatus;
+}
+
+/**
+ * `sendCandidateWelcomeEmail`, with its contract enforced rather than trusted.
+ * A thrown invitation must never cost the caller a created candidate.
+ */
+async function sendWelcome(
+  input: Parameters<typeof sendCandidateWelcomeEmail>[0],
+): Promise<WelcomeEmailStatus> {
+  try {
+    return await sendCandidateWelcomeEmail(input);
+  } catch (error) {
+    console.error('[candidates] welcome email threw past its own guard', {
+      name: error instanceof Error ? error.name : 'unknown',
+    });
+    return 'failed';
+  }
 }
 
 export async function createCandidateAction(
@@ -56,6 +77,7 @@ export async function createCandidateAction(
       email: formData.get('email'),
       temporaryPassword: formData.get('temporaryPassword'),
       interviewId: rawInterviewId === '' ? undefined : rawInterviewId,
+      sendWelcomeEmail: formData.get('sendWelcomeEmail') === 'true',
     });
 
     const existing = await prisma.user.findUnique({
@@ -64,16 +86,21 @@ export async function createCandidateAction(
     });
     if (existing) throw new AppError(DUPLICATE_EMAIL, { email: [DUPLICATE_EMAIL] });
 
+    let assignedInterview: { title: string; durationMinutes: number | null } | undefined;
     if (input.interviewId) {
       const interview = await prisma.interview.findUnique({
         where: { id: input.interviewId },
-        select: { id: true },
+        // `durationMinutes` rides along for the email: opening the workspace
+        // starts a countdown that is never reset, so an invitation that does
+        // not mention it can cost a candidate their window.
+        select: { id: true, title: true, durationMinutes: true },
       });
       if (!interview) {
         throw new AppError('That interview no longer exists.', {
           interviewId: ['That interview no longer exists.'],
         });
       }
+      assignedInterview = { title: interview.title, durationMinutes: interview.durationMinutes };
     }
 
     const candidate = await prisma.user.create({
@@ -92,13 +119,36 @@ export async function createCandidateAction(
       select: { id: true, name: true, email: true },
     });
 
+    // Deliberately after the commit and deliberately not awaited *inside* a
+    // transaction: the account is real from this point on, so a mail provider
+    // that is down degrades to the hand-over flow this feature replaces
+    // rather than failing a creation that has already happened.
+    //
+    // The try/catch is here as well as inside `sendCandidateWelcomeEmail`
+    // because this is the frame that owns the committed row. Relying on the
+    // callee's "never throws" docblock makes the invariant a convention: one
+    // escape and `actionGuard` turns a created account into "Something went
+    // wrong", with the plaintext password lost from the only screen that
+    // would ever have shown it.
+    const emailStatus = await sendWelcome({
+      name: candidate.name,
+      email: candidate.email,
+      temporaryPassword: input.temporaryPassword,
+      ...(assignedInterview ? { interviewTitle: assignedInterview.title } : {}),
+      ...(assignedInterview?.durationMinutes
+        ? { interviewDurationMinutes: assignedInterview.durationMinutes }
+        : {}),
+      requested: input.sendWelcomeEmail,
+    });
+
     revalidateCandidate(candidate.id);
     if (input.interviewId) revalidatePath(`/admin/interviews/${input.interviewId}`);
 
     // The plaintext password is deliberately NOT echoed back: the browser
     // that submitted it already has it, and returning it would put it in the
-    // action result, the RSC payload and any error reporting downstream.
-    return ok(candidate);
+    // action result, the RSC payload and any error reporting downstream. The
+    // email status is a slug for the same reason.
+    return ok({ ...candidate, emailStatus });
   });
 }
 

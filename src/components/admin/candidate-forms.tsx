@@ -16,6 +16,8 @@ import { MIN_PASSWORD_LENGTH } from '@/features/auth/password-policy';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Label } from '@/components/ui/label';
 import { Alert } from '@/components/ui/alert';
 import { Field, FormAlert, SubmitButton } from '@/components/admin/form';
 import { ActionForm, HiddenFields } from '@/components/admin/action-form';
@@ -54,9 +56,17 @@ async function copyToClipboard(value: string): Promise<void> {
  * just submitted, held in component state and dropped on navigation. Nothing
  * persists it, and reloading the page loses it for good — which is the point.
  */
-function RevealedPassword({ password, children }: { password: string; children: React.ReactNode }) {
+function RevealedPassword({
+  password,
+  title = 'Share this password now — it will not be shown again',
+  children,
+}: {
+  password: string;
+  title?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <Alert tone="success" title="Share this password now — it will not be shown again">
+    <Alert tone="success" title={title}>
       <div className="mt-1.5 space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <code className="bg-background rounded border px-2 py-1 font-mono text-[13px] break-all">
@@ -123,10 +133,79 @@ function TemporaryPasswordField({
   );
 }
 
+/**
+ * What the admin is told about the invitation.
+ *
+ * `failed` is not an error banner: the candidate exists and the password is
+ * on screen, so the outcome is "you are handing this over yourself", which is
+ * a warning about the next step rather than a report that something broke.
+ *
+ * The status type is read off the action's result rather than imported from
+ * the (server-only) email module — nothing here needs that module, and a
+ * type-only import is an easy thing for a later edit to turn into a value one.
+ */
+export function WelcomeEmailNote({
+  status,
+  email,
+}: {
+  status: CreatedCandidate['emailStatus'];
+  email: string;
+}) {
+  switch (status) {
+    case 'sent':
+      return (
+        <Alert tone="success">
+          The sign-in details were emailed to <strong>{email}</strong>.
+        </Alert>
+      );
+    case 'sandboxed':
+      return (
+        <Alert tone="info">
+          Mailjet accepted the email in sandbox mode, so nothing was delivered to{' '}
+          <strong>{email}</strong>. Share the password yourself, or unset{' '}
+          <code>MAILJET_SANDBOX</code> to send for real.
+        </Alert>
+      );
+    case 'failed':
+      return (
+        <Alert tone="warning" title="The invitation email could not be sent">
+          The account was created — only the email failed. Share the password below yourself: it
+          cannot be emailed later without resetting the password. The server log has the reason.
+        </Alert>
+      );
+    // Reachable only when the admin ticked a box a *different* replica offered
+    // — a rolling deploy that dropped the mail credentials. Folding it in with
+    // `not_requested` made it the one non-send with no banner at all, on the
+    // case where the admin explicitly asked for the email.
+    case 'not_configured':
+      return (
+        <Alert tone="warning" title="No email was sent">
+          This server has no mail provider configured, so the invitation could not be sent. Share
+          the password below yourself.
+        </Alert>
+      );
+    case 'not_requested':
+      return null;
+    default:
+      // `noImplicitReturns` is off, so a sixth status would otherwise render
+      // nothing and say nothing. This makes adding one a type error.
+      return assertNever(status);
+  }
+}
+
+function assertNever(value: never): null {
+  void value;
+  return null;
+}
+
 export function CandidateCreateForm({
   interviews,
+  emailEnabled,
 }: {
   interviews: Array<{ id: string; title: string; status: InterviewStatus }>;
+  /** False when the deployment has no Mailjet credentials: offering a
+   *  checkbox that cannot send anything is worse than not offering one. */
+  emailEnabled: boolean;
 }) {
   const [state, setState] = useState<ActionResult<CreatedCandidate> | null>(null);
   const [password, setPassword] = useState('');
@@ -147,11 +226,26 @@ export function CandidateCreateForm({
   if (created && revealed) {
     return (
       <div className="space-y-4">
-        <RevealedPassword password={revealed}>
+        <WelcomeEmailNote status={created.emailStatus} email={created.email} />
+        <RevealedPassword
+          password={revealed}
+          // Without this the sent case stacks two green alerts that contradict
+          // each other: "we emailed it" directly above "share this now".
+          title={
+            created.emailStatus === 'sent'
+              ? 'Temporary password — already emailed to the candidate'
+              : 'Share this password now — it will not be shown again'
+          }
+        >
           <p>
             {created.name} ({created.email}) can sign in now and will be asked to choose their own
             password immediately.
           </p>
+          {created.emailStatus === 'sent' ? (
+            <p className="mt-1">
+              Keep it until they confirm the email arrived — it will not be shown here again.
+            </p>
+          ) : null}
         </RevealedPassword>
         <div className="flex flex-wrap gap-2">
           <Button asChild size="sm">
@@ -225,6 +319,23 @@ export function CandidateCreateForm({
           ))}
         </Select>
       </Field>
+
+      {emailEnabled ? (
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2">
+            {/* An unchecked box submits no field at all, which the server
+                reads as false — so the value only ever travels when ticked. */}
+            <Checkbox id="sendWelcomeEmail" name="sendWelcomeEmail" value="true" defaultChecked />
+            <Label htmlFor="sendWelcomeEmail" className="cursor-pointer font-normal">
+              Email the sign-in details to the candidate
+            </Label>
+          </div>
+          <p className="text-muted-foreground text-[12px]">
+            Sends the temporary password to their inbox. They must still replace it at first
+            sign-in, and it is shown here either way.
+          </p>
+        </div>
+      ) : null}
 
       <div className="flex gap-2 pt-1">
         <SubmitButton>Create candidate</SubmitButton>

@@ -58,6 +58,11 @@ export const createCandidateSchema = z.object({
   email: emailSchema,
   temporaryPassword: passwordSchema,
   interviewId: z.string().max(64).optional(),
+  // The coercion that matters is in `createCandidateAction`, which reads the
+  // field as `=== 'true'` — an unchecked checkbox submits nothing at all, and
+  // anything that is not the literal tick must not send. The default here is
+  // the same decision for any other caller: absent means do not mail.
+  sendWelcomeEmail: z.boolean().default(false),
 });
 
 export const updateCandidateSchema = z.object({
