@@ -393,8 +393,11 @@ export function Workspace({ data }: { data: WorkspaceData }) {
         language: currentLanguage,
         sourceCode,
       });
-      // Mirror the finished run so a refresh restores it (client-only state).
+      // Mirror the finished run so a refresh restores it (client-only state),
+      // and drop the frozen restore-cache entry so a later remount of this
+      // question reads this newer run rather than the one from first load.
       writeRunCache(question.id, { language: currentLanguage, sourceCode, result });
+      restoredRunCache.delete(question.id);
       return result;
     } catch (error) {
       if (controller.signal.aborted) {
@@ -416,9 +419,16 @@ export function Workspace({ data }: { data: WorkspaceData }) {
   const cancelRun = () => abortRef.current?.abort();
 
   // Until the candidate starts a run this mount, show the run restored from
-  // localStorage; after that, the live one wins. A restored run counts as
-  // reusable on submit only while its buffer still matches (`runMatches`).
-  const displayRun = run.phase === 'idle' ? (restoredRun ?? IDLE_RUN) : run;
+  // localStorage — but only for the language currently selected, so the panel
+  // never shows a Python run while the editor is on JavaScript. After a live
+  // run starts, it wins. A restored run is reusable on submit only while its
+  // buffer still matches (`runMatches`).
+  const displayRun =
+    run.phase !== 'idle'
+      ? run
+      : restoredRun && restoredRun.language === language
+        ? restoredRun
+        : IDLE_RUN;
   const reusableRun = runMatches(displayRun, language, source) ? displayRun.result : null;
 
   // Returns whether the submission was recorded, so the auto-submit path can
@@ -507,6 +517,7 @@ export function Workspace({ data }: { data: WorkspaceData }) {
         expired: countdown.expired,
         expiredAtLoad: expiredAtLoadRef.current,
         submitting,
+        runInFlight: run.phase === 'running',
         singleSubmissionUsed,
         alreadyRecorded: recorded !== null,
         alreadyAutoSubmitted: autoSubmittedRef.current,
@@ -522,7 +533,7 @@ export function Workspace({ data }: { data: WorkspaceData }) {
         }
       });
     }
-  }, [countdown, isDesktop, submitting, singleSubmissionUsed, recorded]);
+  }, [countdown, isDesktop, submitting, run.phase, singleSubmissionUsed, recorded]);
 
   // Offline, "Not saved" is alarming and wrong — the local mirror has the code
   // and the server copy syncs on reconnect — so reassure instead.

@@ -203,6 +203,23 @@ describe('importQuestionsAction — de-duplication', () => {
     expect(h.revalidatePath).not.toHaveBeenCalled();
   });
 
+  // Titles are trimmed by the schema before both the dup check and the DB
+  // lookup, and the DB stores trimmed titles, so surrounding whitespace must
+  // not defeat the skip.
+  it('matches an existing title after trimming surrounding whitespace', async () => {
+    h.db.question.findMany.mockResolvedValue([{ title: 'Echo' }]);
+
+    const result = await importQuestionsAction({ questions: [question({ title: '  Echo  ' })] });
+
+    expect(result).toEqual({
+      ok: true,
+      data: { imported: 0, skipped: 1, skippedTitles: ['Echo'], importedIds: [] },
+    });
+    // The DB was queried for the trimmed form, not the padded one.
+    const where = h.db.question.findMany.mock.calls[0]?.[0]?.where as { title: { in: string[] } };
+    expect(where.title.in).toEqual(['Echo']);
+  });
+
   // A manifest that repeats a title within itself is almost certainly a
   // mistake; importing one copy and dropping the rest would hide it.
   it('rejects a manifest that lists the same title twice, before any write', async () => {
@@ -252,5 +269,54 @@ describe('importQuestionsAction — validation', () => {
       'Weight must be at least 1.',
     ]);
     expect(h.db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-object payload rather than crashing', async () => {
+    const result = failed(await importQuestionsAction(42));
+
+    expect(result.error).toBeTruthy();
+    expect(h.db.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('importQuestionsAction — strict entries, lenient envelope', () => {
+  // A typo in a hand-written manifest must not be silently stripped and
+  // defaulted — an unknown key on an entry is a hard error.
+  it('rejects an entry with an unknown field, naming the entry', async () => {
+    const result = failed(
+      await importQuestionsAction({ questions: [{ title: 'Typo', timeLimtMs: 999 }] }),
+    );
+
+    expect(result.fieldErrors).toBeDefined();
+    expect(Object.keys(result.fieldErrors ?? {}).some((key) => key.startsWith('questions.0'))).toBe(
+      true,
+    );
+    expect(h.db.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unknown field on a nested test case', async () => {
+    const result = failed(
+      await importQuestionsAction({
+        questions: [
+          question({ title: 'T', testCases: [{ input: '1', expectedOutput: '1', hiden: true }] }),
+        ],
+      }),
+    );
+
+    expect(h.db.$transaction).not.toHaveBeenCalled();
+    expect(result.error).toBeTruthy();
+  });
+
+  // The envelope stays forward-compatible: any version number and any extra
+  // top-level key are accepted and ignored.
+  it('accepts an unknown version and ignores extra envelope keys', async () => {
+    const result = await importQuestionsAction({
+      version: 2,
+      exportedBy: 'some future tool',
+      questions: [question({ title: 'V2' })],
+    });
+
+    expect(result.ok).toBe(true);
+    expect(createdQuestions().map((q) => q.title)).toEqual(['V2']);
   });
 });

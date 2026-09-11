@@ -21,6 +21,14 @@ export interface AutoSubmitConditions {
   expiredAtLoad: boolean;
   /** A submit is already in flight. */
   submitting: boolean;
+  /**
+   * A test run is in progress. Auto-submitting now would call `executeTests`
+   * while the previous run still holds the lock, get back `null`, and — because
+   * the one-shot flag is already set — never retry. So we WAIT for the run to
+   * settle and fire on the next tick instead of spending the attempt on a
+   * guaranteed miss, which is precisely the frantic last-second case.
+   */
+  runInFlight: boolean;
   /** One-submission interview whose single submission is already spent. */
   singleSubmissionUsed: boolean;
   /** Something was already submitted this session — don't double up. */
@@ -35,6 +43,7 @@ export function shouldAutoSubmit(c: AutoSubmitConditions): boolean {
     c.expired &&
     !c.expiredAtLoad &&
     !c.submitting &&
+    !c.runInFlight &&
     !c.singleSubmissionUsed &&
     !c.alreadyRecorded &&
     !c.alreadyAutoSubmitted

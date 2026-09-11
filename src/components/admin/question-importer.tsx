@@ -84,6 +84,9 @@ function preview(text: string): { preview?: ManifestPreview; error?: string } {
 
 /** `questions.2.testCases.1.weight` reads as "Question 3 → Test 2 → weight". */
 function describePath(path: string): string {
+  // A whole-payload error (a non-object manifest) has an empty Zod path, which
+  // `flattenZod` keys as `_`; name it for what it is rather than showing "_".
+  if (path === '_') return 'Manifest';
   return path
     .replace(/^questions\.(\d+)/, (_m, i) => `Question ${Number(i) + 1}`)
     .replace(/\.testCases\.(\d+)/, (_m, i) => ` → Test ${Number(i) + 1}`)

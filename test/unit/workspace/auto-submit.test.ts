@@ -9,6 +9,7 @@ function ready(overrides: Partial<AutoSubmitConditions> = {}): AutoSubmitConditi
     expired: true,
     expiredAtLoad: false,
     submitting: false,
+    runInFlight: false,
     singleSubmissionUsed: false,
     alreadyRecorded: false,
     alreadyAutoSubmitted: false,
@@ -36,6 +37,12 @@ describe('shouldAutoSubmit', () => {
 
   it('does not fire while a submit is already in flight', () => {
     expect(shouldAutoSubmit(ready({ submitting: true }))).toBe(false);
+  });
+
+  // Waits for an in-flight run to settle instead of spending the one attempt on
+  // a call that would immediately return null (the run lock is still held).
+  it('does not fire while a test run is in progress', () => {
+    expect(shouldAutoSubmit(ready({ runInFlight: true }))).toBe(false);
   });
 
   it('does not spend a one-submission interview that is already used', () => {

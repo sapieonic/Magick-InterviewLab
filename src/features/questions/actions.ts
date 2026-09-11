@@ -178,45 +178,54 @@ export async function importQuestionsAction(
 
     const importedIds: string[] = [];
     if (toCreate.length > 0) {
-      await prisma.$transaction(async (tx) => {
-        for (const question of toCreate) {
-          // Drop starter code for unsupported languages, exactly as the manual
-          // create path does — a client (or a hand-written manifest) is a
-          // suggestion, not the control.
-          const allowedKeys = new Set(question.supportedLanguages.map(starterCodeKey));
-          const starterCode: Record<string, string> = {};
-          for (const [key, value] of Object.entries(question.starterCode)) {
-            if (allowedKeys.has(key)) starterCode[key] = value;
-          }
+      // The batch is one interactive transaction (all-or-nothing), and it runs
+      // up to ~2 queries per entry sequentially — for the 200-question cap that
+      // is ~400 round trips, well past Prisma's default 5s interactive-tx
+      // timeout. Without a raised timeout a large import (the whole point of the
+      // feature) aborts with P2028 and imports nothing. Sized generously for a
+      // full manifest over WAN latency to a pooled Postgres.
+      await prisma.$transaction(
+        async (tx) => {
+          for (const question of toCreate) {
+            // Drop starter code for unsupported languages, exactly as the manual
+            // create path does — a client (or a hand-written manifest) is a
+            // suggestion, not the control.
+            const allowedKeys = new Set(question.supportedLanguages.map(starterCodeKey));
+            const starterCode: Record<string, string> = {};
+            for (const [key, value] of Object.entries(question.starterCode)) {
+              if (allowedKeys.has(key)) starterCode[key] = value;
+            }
 
-          const created = await tx.question.create({
-            data: {
-              title: question.title,
-              description: question.description,
-              difficulty: question.difficulty,
-              supportedLanguages: question.supportedLanguages,
-              starterCode,
-              timeLimitMs: question.timeLimitMs,
-              memoryLimitMb: question.memoryLimitMb,
-            },
-            select: { id: true },
-          });
-          importedIds.push(created.id);
-
-          if (question.testCases.length > 0) {
-            await tx.testCase.createMany({
-              data: question.testCases.map((test, position) => ({
-                input: test.input,
-                expectedOutput: test.expectedOutput,
-                description: test.description,
-                weight: test.weight,
-                position,
-                questionId: created.id,
-              })),
+            const created = await tx.question.create({
+              data: {
+                title: question.title,
+                description: question.description,
+                difficulty: question.difficulty,
+                supportedLanguages: question.supportedLanguages,
+                starterCode,
+                timeLimitMs: question.timeLimitMs,
+                memoryLimitMb: question.memoryLimitMb,
+              },
+              select: { id: true },
             });
+            importedIds.push(created.id);
+
+            if (question.testCases.length > 0) {
+              await tx.testCase.createMany({
+                data: question.testCases.map((test, position) => ({
+                  input: test.input,
+                  expectedOutput: test.expectedOutput,
+                  description: test.description,
+                  weight: test.weight,
+                  position,
+                  questionId: created.id,
+                })),
+              });
+            }
           }
-        }
-      });
+        },
+        { timeout: 120_000, maxWait: 15_000 },
+      );
     }
 
     if (importedIds.length > 0) revalidateQuestion();

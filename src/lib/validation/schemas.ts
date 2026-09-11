@@ -136,19 +136,33 @@ export const questionInputSchema = z.object({
 });
 
 /**
+ * A question inside an import manifest. Identical to `questionInputSchema`, but
+ * `.strict()` — an unknown key on an entry (a typo like `timeLimtMs` or
+ * `dificulty`) is a hard error rather than being silently stripped and
+ * defaulted, which for a hand-written bulk file is a data-quality trap. Nested
+ * test cases are strict for the same reason. Every default still applies, so an
+ * entry may omit anything but a title.
+ */
+const manifestQuestionSchema = questionInputSchema
+  .extend({
+    testCases: z.array(testCaseInputSchema.strict()).max(50).default([]),
+  })
+  .strict();
+
+/**
  * Bulk import. A manifest is either a bare array of questions or an object with
- * a `questions` array (plus an optional `version` for forward-compatibility).
- * Each entry is a full question — the very shape the editor posts — so an
- * import writes exactly what a manual create would. Every `questionInputSchema`
- * default applies, so an entry may omit anything but a title, and every Zod
- * error path stays rooted at `questions.<i>...` for a legible per-entry message.
+ * a `questions` array. The envelope stays lenient — an unknown top-level key (a
+ * future `metadata`, say) is ignored and `version` accepts any number and is
+ * otherwise unused — so a manifest from a later exporter still imports; the
+ * per-entry strictness above is where typos are caught. Every Zod error path
+ * stays rooted at `questions.<i>...` for a legible per-entry message.
  */
 export const questionManifestSchema = z.preprocess(
   (value) => (Array.isArray(value) ? { questions: value } : value),
   z.object({
-    version: z.literal(1).optional(),
+    version: z.number().int().positive().optional(),
     questions: z
-      .array(questionInputSchema)
+      .array(manifestQuestionSchema)
       .min(1, 'The manifest contains no questions.')
       .max(200, 'A manifest may hold at most 200 questions.'),
   }),

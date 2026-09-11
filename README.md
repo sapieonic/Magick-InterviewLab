@@ -298,16 +298,24 @@ editor uses (`difficulty` `EASY`, both languages, `timeLimitMs` 5000,
 runtime id (`javascript`, `python`); a key for an unsupported language is
 dropped, exactly as the editor does. Each entry is validated with the same
 schema and written through the same create path as a hand-entered question, so
-an imported question is indistinguishable from one typed in.
+an imported question is indistinguishable from one typed in. Entries are
+**strict** — a misspelled field name (`timeLimtMs`, `dificulty`) is a hard
+error rather than being silently ignored and defaulted — while the envelope
+stays lenient, so an unknown top-level key and any `version` number are accepted
+(forward-compatibility).
 
 An entry whose `title` already exists in the bank is **skipped, never
-overwritten** — re-running the same manifest is a no-op rather than a pile of
-duplicates — and the import reports how many it created and how many it skipped.
-The whole batch is one transaction: if any entry is invalid the import writes
-nothing and names the offending entry (e.g. _Question 3 → Test 2 → weight_). A
-manifest may hold up to 200 questions; a title repeated within the manifest
-itself is rejected. Use the **Load sample** button on the import page for a
-ready-to-edit starting point.
+overwritten**, so re-running the same manifest imports only what is new instead
+of a pile of duplicates. This dedup is best-effort: `title` is not uniquely
+constrained in the database, so two imports of the same set running at the very
+same instant could each insert (the single-page importer already disables its
+button while a run is in flight, so a double-click cannot). The import reports
+how many it created and how many it skipped. The whole batch is one transaction
+— sized to allow a full manifest — so if any entry is invalid, or a write
+fails partway, the import writes nothing and names the offending entry (e.g.
+_Question 3 → Test 2 → weight_). A manifest may hold up to 200 questions; a
+title repeated within the manifest itself is rejected. Use the **Load sample**
+button on the import page for a ready-to-edit starting point.
 
 ---
 

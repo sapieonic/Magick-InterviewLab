@@ -16,6 +16,14 @@ import type { ExecutionResult, Language } from '@/features/execution/types';
 
 const STORAGE_PREFIX = 'ilab.run.v1';
 
+// Field caps mirror the submission payload (`createSubmissionSchema`), and a
+// hard ceiling on the whole serialized entry so a verbose run can never crowd
+// out the draft mirror — the *critical* resilience path — in the ~5MB origin
+// quota. A run that is still too big after clipping is simply not cached.
+const MAX_FIELD = 20_000;
+const MAX_ERROR = 4_000;
+const MAX_CACHE_BYTES = 1_000_000;
+
 export interface RunSnapshot {
   language: Language;
   sourceCode: string;
@@ -25,6 +33,39 @@ export interface RunSnapshot {
 
 function storageKey(questionId: string): string {
   return `${STORAGE_PREFIX}.${questionId}`;
+}
+
+function clip(value: string, max: number): string {
+  return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
+}
+
+/**
+ * A size-bounded copy of a run result for local caching. Per-test output can be
+ * hundreds of KB each; unclipped, a single cached run could fill the origin's
+ * localStorage quota and make the next `writeLocalDraft` throw — silently
+ * disabling the draft mirror, which is the one write that must never fail.
+ */
+export function clipResultForCache(result: ExecutionResult): ExecutionResult {
+  return {
+    status: result.status,
+    executionTimeMs: result.executionTimeMs,
+    fatalError: result.fatalError ? clip(result.fatalError, MAX_ERROR) : undefined,
+    stdout: result.stdout ? clip(result.stdout, MAX_FIELD) : undefined,
+    stderr: result.stderr ? clip(result.stderr, MAX_FIELD) : undefined,
+    tests: result.tests.map((test) => ({
+      testCaseId: test.testCaseId,
+      description: test.description,
+      status: test.status,
+      input: clip(test.input, MAX_FIELD),
+      expectedOutput: clip(test.expectedOutput, MAX_FIELD),
+      actualOutput: clip(test.actualOutput, MAX_FIELD),
+      stderr: test.stderr ? clip(test.stderr, MAX_FIELD) : undefined,
+      errorMessage: test.errorMessage ? clip(test.errorMessage, MAX_ERROR) : undefined,
+      errorKind: test.errorKind,
+      weight: test.weight,
+      durationMs: test.durationMs,
+    })),
+  };
 }
 
 /**
@@ -67,20 +108,18 @@ export function writeRunCache(
   snapshot: Pick<RunSnapshot, 'language' | 'sourceCode' | 'result'>,
 ): void {
   try {
-    window.localStorage.setItem(
-      storageKey(questionId),
-      JSON.stringify({ ...snapshot, savedAt: Date.now() } satisfies RunSnapshot),
-    );
+    const payload = JSON.stringify({
+      language: snapshot.language,
+      sourceCode: snapshot.sourceCode,
+      result: clipResultForCache(snapshot.result),
+      savedAt: Date.now(),
+    } satisfies RunSnapshot);
+    // A run too large even after clipping is dropped rather than risking the
+    // quota that the draft mirror depends on.
+    if (payload.length > MAX_CACHE_BYTES) return;
+    window.localStorage.setItem(storageKey(questionId), payload);
   } catch {
-    // Quota (a large run can be MBs) or a locked-down browser. The run simply
-    // will not survive a refresh; nothing else depends on it.
-  }
-}
-
-export function clearRunCache(questionId: string): void {
-  try {
-    window.localStorage.removeItem(storageKey(questionId));
-  } catch {
-    // Nothing to do — a stale entry that fails `runMatches` is inert anyway.
+    // Quota or a locked-down browser. The run simply will not survive a
+    // refresh; nothing else depends on it.
   }
 }
