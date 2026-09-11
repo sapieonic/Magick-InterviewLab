@@ -29,6 +29,10 @@ const LINKS: readonly NavLink[] = [
     exact: false,
     capability: 'VIEW_ALL_APPLICATIONS',
   },
+  // Job roles, pipeline templates and staff accounts. The page itself gates
+  // each section separately, so the link only needs the weaker of the two
+  // capabilities that unlock anything there.
+  { href: '/admin/settings', label: 'Settings', exact: false, capability: 'MANAGE_CONTENT' },
 ];
 
 export function AdminNav({

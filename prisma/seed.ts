@@ -159,6 +159,31 @@ async function seedDemo(): Promise<void> {
   });
   console.info('✓ Interview assigned to candidate');
 
+  // A second candidate with nothing attached, so the "start an application"
+  // picker on the board has somebody in it: the first candidate is mid-flight
+  // by the time the seed finishes, and `listAssignableCandidates` rightly
+  // excludes anyone with a live run.
+  const spareEmail = (process.env.SEED_SPARE_CANDIDATE_EMAIL || 'applicant@magicvoice.local')
+    .trim()
+    .toLowerCase();
+  const spare = await prisma.user.findUnique({ where: { email: spareEmail } });
+  if (!spare) {
+    const plaintext = process.env.SEED_CANDIDATE_PASSWORD?.trim() || generatePassword();
+    await prisma.user.create({
+      data: {
+        email: spareEmail,
+        name: 'Nadia Halvorsen',
+        passwordHash: await hash(plaintext, ARGON),
+        role: 'CANDIDATE',
+        mustChangePassword: true,
+      },
+    });
+    console.info(`✓ Candidate created: ${spareEmail}`);
+    console.info(`  Temporary password (shown once): ${plaintext}`);
+  } else {
+    console.info(`· Candidate ${spareEmail} already exists.`);
+  }
+
   await seedPipeline({ candidateId: candidate.id, assignmentId: assignment.id });
 }
 
