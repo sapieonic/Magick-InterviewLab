@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Longest Palindromic Substring",
+      "difficulty": "MEDIUM",
+      "supportedLanguages": ["PYTHON"],
+      "description": "Read a single line containing a string of **lowercase English letters** (length ≥ 1 — the line is never empty). Print the **longest contiguous substring** of that line which reads the same forwards and backwards (a palindrome).\n\nIf more than one substring of the maximum length is a palindrome, print the one that **starts earliest** in the string. Every single character is itself a palindrome of length 1, so an answer always exists, even when no longer palindrome does.\n\n### Input\nA single line of lowercase letters, e.g.\n```\nbabad\n```\n\n### Output\nThe longest palindromic substring, e.g.\n```\nbab\n```\n\n### Worked examples\n\n**Odd-length palindrome**\n```\nInput:  babad\nOutput: bab\n```\n`bab` and `aba` are both palindromes of length 3; `bab` starts first (at index 0), so it is printed instead of `aba`.\n\n**Even-length palindrome**\n```\nInput:  cbbd\nOutput: bb\n```\n`bb` (indices 1-2) is the longest palindrome here — there is no odd-length palindrome longer than a single character, so the answer is even-length. Watch out for this case: a palindrome can be centred **between** two letters, not just on one.\n\n### Tie-break rule\nWhen two or more substrings share the maximum length, print whichever one **begins first** in the input string, regardless of where the others occur.",
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "starterCode": {
+        "python": "import sys\n\n\ndef main():\n    s = sys.stdin.readline().strip()\n\n    # TODO: find the longest contiguous palindromic substring of s.\n    # If multiple substrings tie for the longest length, print the one\n    # that starts earliest in s. Remember a palindrome can be centred\n    # on a single letter (odd length) or between two letters (even length).\n\n\nif __name__ == \"__main__\":\n    main()\n"
+      },
+      "testCases": [
+        {
+          "description": "odd-length palindrome inside a longer string",
+          "input": "babad",
+          "expectedOutput": "bab",
+          "weight": 2
+        },
+        {
+          "description": "even-length palindrome (even-centre case)",
+          "input": "cbbd",
+          "expectedOutput": "bb",
+          "weight": 3
+        },
+        {
+          "description": "no palindrome longer than one character",
+          "input": "abcde",
+          "expectedOutput": "a",
+          "weight": 2
+        },
+        {
+          "description": "the whole string is a palindrome",
+          "input": "racecar",
+          "expectedOutput": "racecar",
+          "weight": 2
+        },
+        {
+          "description": "tie between two equal-length palindromes, earliest start wins",
+          "input": "abaxcdc",
+          "expectedOutput": "aba",
+          "weight": 3
+        },
+        {
+          "description": "single character input",
+          "input": "z",
+          "expectedOutput": "z",
+          "weight": 1
+        },
+        {
+          "description": "whole string is a short even-length palindrome",
+          "input": "aa",
+          "expectedOutput": "aa",
+          "weight": 1
+        },
+        {
+          "description": "longer input with an embedded palindrome",
+          "input": "zxqjplaabcddcbaqwmnhgexyztuvrsklopqf",
+          "expectedOutput": "abcddcba",
+          "weight": 2
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Evaluate Plus and Times Expression",
+      "difficulty": "MEDIUM",
+      "supportedLanguages": ["JAVASCRIPT"],
+      "description": "You are given a single line containing a valid arithmetic expression made up of **non-negative integers** joined by the operators `+` and `*`. There are **no parentheses** and **no spaces** anywhere in the line.\n\nPrint the integer value of the expression, respecting standard operator precedence: `*` binds tighter than `+` (i.e. evaluate all the multiplications first, then add up the results — do **not** just evaluate left to right).\n\nYou must **not** use `eval` (or `Function(...)`, or any other dynamic-code-execution shortcut) to compute the answer. Parse and evaluate the expression yourself.\n\n### Input\nOne line: a non-empty string of digits, `+`, and `*` characters, e.g.\n```\n2+3*4+5\n```\n\n### Output\nOne line: a single integer, the value of the expression.\n\n### Worked example\nFor input `2+3*4+5`, the multiplication happens first (`3*4=12`), then the additions: `2+12+5=19`. So the output is `19` — **not** `20`, which is what you'd get by evaluating strictly left to right.\n\n### Guarantees\n- The expression is always well-formed and valid (no leading/trailing operators, no empty terms, no division, no parentheses, no spaces).\n- Numbers may have more than one digit (e.g. `12`, `340`).\n- All intermediate and final values fit comfortably within a standard 64-bit / JS safe-integer range.",
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "starterCode": {
+        "javascript": "const line = (readLine() ?? '').trim();\n\n// The line is an expression like \"2+3*4+5\" — digits, '+' and '*' only,\n// no spaces, no parentheses. '*' binds tighter than '+'.\n//\n// TODO: parse `line` yourself (no eval / Function) and compute its value\n// respecting precedence, then print the result with console.log().\n"
+      },
+      "testCases": [
+        {
+          "description": "normal mixed expression",
+          "input": "2+3*4+5",
+          "expectedOutput": "19",
+          "weight": 2
+        },
+        {
+          "description": "precedence proof: must not evaluate left-to-right",
+          "input": "2+3*4",
+          "expectedOutput": "14",
+          "weight": 3
+        },
+        {
+          "description": "single number, no operators",
+          "input": "7",
+          "expectedOutput": "7",
+          "weight": 1
+        },
+        {
+          "description": "only additions",
+          "input": "1+2+3+4",
+          "expectedOutput": "10",
+          "weight": 1
+        },
+        {
+          "description": "only multiplications",
+          "input": "2*3*4",
+          "expectedOutput": "24",
+          "weight": 1
+        },
+        {
+          "description": "multi-digit numbers",
+          "input": "12+30*2",
+          "expectedOutput": "72",
+          "weight": 3
+        },
+        {
+          "description": "term containing a zero factor",
+          "input": "5*0+3",
+          "expectedOutput": "3",
+          "weight": 1
+        },
+        {
+          "description": "longer expression with ~10 operators",
+          "input": "2*3+4*5+6*7+8*9+10*11+12",
+          "expectedOutput": "262",
+          "weight": 2
+        }
+      ]
+    }
+  ]
+}

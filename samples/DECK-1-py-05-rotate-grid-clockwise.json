@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Rotate a Grid 90 Degrees Clockwise",
+      "difficulty": "MEDIUM",
+      "supportedLanguages": ["PYTHON"],
+      "description": "You are given a grid of integers. Rotate it 90 degrees clockwise and print the result.\n\n### Input\n- The first line contains two integers `r` and `c` — the number of rows and columns of the grid.\n- Each of the next `r` lines contains `c` space-separated integers — one row of the grid.\n\n### Output\nPrint the rotated grid: `c` lines, each with `r` space-separated integers.\n\nRotating 90 degrees clockwise turns the grid so that its **first column (read bottom-to-top) becomes the first row** of the output, its second column (read bottom-to-top) becomes the second row, and so on. Note the shape changes: an `r x c` grid rotates into a `c x r` grid.\n\n### Example\n\nInput:\n```\n2 3\n1 2 3\n4 5 6\n```\n\nThis is a 2-row, 3-column grid:\n```\n1 2 3\n4 5 6\n```\n\nRotated 90 degrees clockwise, the first column of the input (`1`, `4`, read bottom-to-top: `4 1`) becomes the first output row, the second column (`2`, `5` → `5 2`) becomes the second row, and the third column (`3`, `6` → `6 3`) becomes the third row:\n```\n4 1\n5 2\n6 3\n```\n\nRead input with `sys.stdin`; print output with `print()`.",
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "starterCode": {
+        "python": "import sys\n\ndef main():\n    data = sys.stdin.read().split()\n    idx = 0\n    r = int(data[idx]); idx += 1\n    c = int(data[idx]); idx += 1\n\n    grid = []\n    for i in range(r):\n        row = [int(data[idx + j]) for j in range(c)]\n        idx += c\n        grid.append(row)\n\n    # TODO: build the rotated grid (c rows, r columns) by rotating `grid`\n    # 90 degrees clockwise, then print it as c lines of r space-separated\n    # integers.\n\nmain()\n"
+      },
+      "testCases": [
+        {
+          "description": "3x3 square grid",
+          "input": "3 3\n1 2 3\n4 5 6\n7 8 9",
+          "expectedOutput": "7 4 1\n8 5 2\n9 6 3",
+          "weight": 2
+        },
+        {
+          "description": "2x3 non-square grid (catches a wrong index formula)",
+          "input": "2 3\n1 2 3\n4 5 6",
+          "expectedOutput": "4 1\n5 2\n6 3",
+          "weight": 3
+        },
+        {
+          "description": "3x2 non-square grid with negative numbers",
+          "input": "3 2\n-1 2\n3 -4\n5 6",
+          "expectedOutput": "5 3 -1\n6 -4 2",
+          "weight": 3
+        },
+        {
+          "description": "single row (1xN)",
+          "input": "1 5\n-1 -2 -3 -4 -5",
+          "expectedOutput": "-1\n-2\n-3\n-4\n-5",
+          "weight": 1
+        },
+        {
+          "description": "single column (Nx1)",
+          "input": "5 1\n10\n20\n30\n40\n50",
+          "expectedOutput": "50 40 30 20 10",
+          "weight": 1
+        },
+        {
+          "description": "1x1 single cell",
+          "input": "1 1\n7",
+          "expectedOutput": "7",
+          "weight": 1
+        },
+        {
+          "description": "larger 4x5 grid",
+          "input": "4 5\n1 2 3 4 5\n6 7 8 9 10\n11 12 13 14 15\n16 17 18 19 20",
+          "expectedOutput": "16 11 6 1\n17 12 7 2\n18 13 8 3\n19 14 9 4\n20 15 10 5",
+          "weight": 2
+        }
+      ]
+    }
+  ]
+}

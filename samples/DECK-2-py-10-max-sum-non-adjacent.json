@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Maximum Sum of Non-Adjacent Elements",
+      "difficulty": "MEDIUM",
+      "supportedLanguages": ["PYTHON"],
+      "description": "You are given an array of integers, which **may include negative numbers**. Choose a subset of the elements such that no two chosen elements are adjacent in the original array (i.e. if you pick the element at index `i`, you cannot also pick the element at index `i - 1` or `i + 1`), and print the maximum possible sum of the chosen elements.\n\nYou are allowed to choose **nothing at all** — the empty subset is always valid and has a sum of `0`. Because of this, the answer is **never negative**: if every element is negative, the best choice is to pick none of them and the answer is `0`.\n\n### Input\n- Line 1: a single integer `n` — the number of elements.\n- Line 2: `n` space-separated integers `a[0] ... a[n-1]` (each may be negative, zero, or positive).\n\n### Output\nA single integer: the maximum sum achievable by choosing elements no two of which are adjacent (or `0` if choosing nothing beats every non-empty choice).\n\n### Example\n```\nInput:\n4\n3 2 7 10\n\nOutput:\n13\n```\nChoosing indices `0` and `3` (values `3` and `10`) gives `3 + 10 = 13`. You can't take both `7` and `10` since they're adjacent, and every other combination of non-adjacent elements sums to less than `13`, so `13` is the best you can do.\n\n### Rules\n- Two chosen elements must never be adjacent (consecutive indices) in the array.\n- The empty selection is always allowed, so the printed answer is never below `0`.",
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "starterCode": {
+        "python": "import sys\n\n\ndef main():\n    data = sys.stdin.read().split()\n    n = int(data[0])\n    nums = list(map(int, data[1:1 + n]))\n\n    # TODO: compute the maximum sum of elements from `nums` such that no\n    # two chosen elements are adjacent. Choosing nothing is allowed, so\n    # the answer must never be below 0.\n\n\nif __name__ == \"__main__\":\n    main()\n"
+      },
+      "testCases": [
+        {
+          "description": "classic case: skip the middle element to take the two ends",
+          "input": "4\n3 2 7 10",
+          "expectedOutput": "13",
+          "weight": 2
+        },
+        {
+          "description": "greedy trap: the two largest values (10 and 9) are adjacent, so greedily taking the single biggest value first and then the next non-adjacent biggest (10, then 8) gives only 18 - the true optimum skips the top two entirely and takes the three 8s at indices 0, 2, 4 for 25",
+          "input": "5\n8 10 9 8 8",
+          "expectedOutput": "25",
+          "weight": 5
+        },
+        {
+          "description": "all elements negative: the empty selection wins and the answer is 0",
+          "input": "4\n-5 -2 -8 -1",
+          "expectedOutput": "0",
+          "weight": 5
+        },
+        {
+          "description": "single positive element",
+          "input": "1\n7",
+          "expectedOutput": "7",
+          "weight": 1
+        },
+        {
+          "description": "single negative element: choosing nothing beats it",
+          "input": "1\n-7",
+          "expectedOutput": "0",
+          "weight": 2
+        },
+        {
+          "description": "two elements, always adjacent: take the larger one",
+          "input": "2\n4 9",
+          "expectedOutput": "9",
+          "weight": 1
+        },
+        {
+          "description": "mix of negative and positive values",
+          "input": "6\n-2 5 -1 8 -3 4",
+          "expectedOutput": "17",
+          "weight": 3
+        },
+        {
+          "description": "longer input with 30 mixed-sign elements",
+          "input": "30\n31 -36 -47 44 -15 -19 -22 -33 44 -37 36 44 19 -39 25 4 -46 -47 -39 -23 -21 14 27 -47 21 -25 41 33 39 19",
+          "expectedOutput": "327",
+          "weight": 2
+        }
+      ]
+    }
+  ]
+}

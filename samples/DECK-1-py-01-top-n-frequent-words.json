@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Top N Most Frequent Words",
+      "difficulty": "MEDIUM",
+      "supportedLanguages": ["PYTHON"],
+      "description": "Given a line of text, find the `n` most frequently occurring words.\n\n### Input\n\nTwo lines:\n\n1. An integer `n`.\n2. A single line of space-separated lowercase words.\n\n### Output\n\nPrint the `n` most frequent words, **one per line**, in the format:\n\n```\nword count\n```\n\n**Ordering rule:** sort by count **descending**. If two or more words have the same count, break the tie **alphabetically ascending** (`a` before `b`).\n\n**Fewer-than-`n` case:** if the text contains fewer than `n` *distinct* words, print all of the distinct words (following the same ordering rule) instead of padding the output.\n\n### Example\n\nInput:\n```\n3\nthe quick brown fox jumps over the lazy dog the fox\n```\n\nOutput:\n```\nthe 3\nfox 2\nbrown 1\n```\n\n`the` appears 3 times and `fox` appears 2 times, so they take the top two spots. Six words are tied with a count of 1 (`quick`, `brown`, `jumps`, `over`, `lazy`, `dog`); the tie is broken alphabetically, so `brown` — the alphabetically-first of the six — fills the third spot.",
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "starterCode": {
+        "python": "import sys\n\ndef main():\n    data = sys.stdin.read().split('\\n')\n    n = int(data[0].strip())\n    words = data[1].split() if len(data) > 1 else []\n\n    # TODO: count how many times each word appears, then print the top n\n    # words sorted by count (descending), breaking ties alphabetically\n    # (ascending). If there are fewer than n distinct words, print all of\n    # them. Each line of output should be \"word count\".\n\nmain()\n"
+      },
+      "testCases": [
+        {
+          "description": "normal case: distinct counts decide the order",
+          "input": "3\nthe quick brown fox jumps over the lazy dog the fox",
+          "expectedOutput": "the 3\nfox 2\nbrown 1",
+          "weight": 1
+        },
+        {
+          "description": "tie on count: alphabetical tie-break decides the order",
+          "input": "3\nb b a a c c d",
+          "expectedOutput": "a 2\nb 2\nc 2",
+          "weight": 3
+        },
+        {
+          "description": "n = 1 returns only the single most frequent word",
+          "input": "1\nx y y z z z",
+          "expectedOutput": "z 3",
+          "weight": 1
+        },
+        {
+          "description": "n larger than the number of distinct words: print all of them",
+          "input": "5\ncat dog cat",
+          "expectedOutput": "cat 2\ndog 1",
+          "weight": 3
+        },
+        {
+          "description": "all words distinct: every word ties at count 1, so output is purely alphabetical",
+          "input": "2\napple banana cherry date",
+          "expectedOutput": "apple 1\nbanana 1",
+          "weight": 1
+        },
+        {
+          "description": "longer input with mixed counts and a tie among the top results",
+          "input": "4\nto be or not to be that is the question whether tis nobler in the mind to suffer the slings and arrows of outrageous fortune",
+          "expectedOutput": "the 3\nto 3\nbe 2\nand 1",
+          "weight": 2
+        }
+      ]
+    }
+  ]
+}
