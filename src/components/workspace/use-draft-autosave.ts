@@ -75,6 +75,16 @@ export function useDraftAutosave(questionId: string): DraftAutosave {
   const pendingRef = React.useRef(new Map<Language, string>());
   const timerRef = React.useRef<number | null>(null);
 
+  // Put entries that failed to save back on the pending map so the next flush
+  // (a later keystroke, a language switch, unmount, or coming back online)
+  // retries them — but never clobber a newer buffer the candidate has since
+  // typed for that language.
+  const requeue = React.useCallback((entries: Array<[Language, string]>) => {
+    for (const [language, sourceCode] of entries) {
+      if (!pendingRef.current.has(language)) pendingRef.current.set(language, sourceCode);
+    }
+  }, []);
+
   const flush = React.useCallback(async () => {
     if (timerRef.current !== null) {
       window.clearTimeout(timerRef.current);
@@ -91,7 +101,9 @@ export function useDraftAutosave(questionId: string): DraftAutosave {
           saveDraftAction({ questionId, language: toDbLanguage(language), sourceCode }),
         ),
       );
-      if (results.some((result) => !result.ok)) {
+      const failed = pending.filter((_, index) => !results[index]?.ok);
+      if (failed.length > 0) {
+        requeue(failed);
         setStatus('error');
         return;
       }
@@ -99,10 +111,12 @@ export function useDraftAutosave(questionId: string): DraftAutosave {
       setSavedAt(Date.now());
     } catch {
       // A failed save is not fatal — the local mirror already has the code —
-      // but the candidate deserves to know the cloud copy is behind.
+      // but the candidate deserves to know the cloud copy is behind, and the
+      // buffer is kept for the next flush to retry rather than dropped.
+      requeue(pending);
       setStatus('error');
     }
-  }, [questionId]);
+  }, [questionId, requeue]);
 
   // The debounce timer and the unload listeners are registered once but must
   // call the latest `flush`; synced in an effect because a ref write during
