@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Decode a Bracketed Repeat String",
+      "difficulty": "MEDIUM",
+      "supportedLanguages": ["JAVASCRIPT"],
+      "description": "You are given a single line containing an **encoded string**. Wherever a pattern `k[substring]` appears, it means the `substring` inside the brackets should be repeated `k` times. The `substring` between a pair of brackets may itself contain further `k[...]` encodings (nesting), and plain letters may appear anywhere — inside a group, outside a group, or both.\n\nDecode the string fully and print the result.\n\n### Input\nA single line: the encoded string. It contains only lowercase letters, digits `0`-`9`, `[` and `]`.\n\n### Output\nOne line: the fully decoded string.\n\n### Guarantees\n- The input is always well-formed: every `[` has a matching `]`, and every repeat count is at least `1`.\n- A repeat count can be **more than one digit** (e.g. `12[a]` means `a` repeated 12 times).\n\n### Examples\n\n**Flat (two groups, no nesting):**\n```\nInput:  3[a]2[bc]\nOutput: aaabcbc\n```\n\n**Nested:**\n```\nInput:  2[a3[b]]\nOutput: abbbabbb\n```\n(`3[b]` decodes to `bbb`, giving `a` + `bbb` = `abbb` inside the outer group, then that whole thing repeated twice.)\n\n**Letters outside a group, mixed with a group:**\n```\nInput:  ab2[c]d\nOutput: abccd\n```\n",
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "starterCode": {
+        "javascript": "const line = readLine() ?? '';\n\n// TODO: decode the k[substring] encoding (substrings may be nested,\n// and plain letters may appear outside any group) and print the result.\nconsole.log(line);\n"
+      },
+      "testCases": [
+        {
+          "description": "flat string with two separate groups",
+          "input": "3[a]2[bc]",
+          "expectedOutput": "aaabcbc",
+          "weight": 2
+        },
+        {
+          "description": "nested group (one level of nesting)",
+          "input": "2[a3[b]]",
+          "expectedOutput": "abbbabbb",
+          "weight": 3
+        },
+        {
+          "description": "doubly-nested group (two levels of nesting)",
+          "input": "2[a2[b2[c]]]",
+          "expectedOutput": "abccbccabccbcc",
+          "weight": 3
+        },
+        {
+          "description": "letters outside brackets mixed with a group",
+          "input": "ab2[c]d",
+          "expectedOutput": "abccd",
+          "weight": 2
+        },
+        {
+          "description": "multi-digit repeat count",
+          "input": "12[a]",
+          "expectedOutput": "aaaaaaaaaaaa",
+          "weight": 3
+        },
+        {
+          "description": "plain string with no brackets at all",
+          "input": "hello",
+          "expectedOutput": "hello",
+          "weight": 1
+        },
+        {
+          "description": "longer combined input with multiple groups and outside letters",
+          "input": "2[ab]3[cd]e2[f]",
+          "expectedOutput": "ababcdcdcdeff",
+          "weight": 2
+        }
+      ]
+    }
+  ]
+}

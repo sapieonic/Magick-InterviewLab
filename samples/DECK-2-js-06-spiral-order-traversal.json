@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Spiral Order Traversal",
+      "difficulty": "MEDIUM",
+      "supportedLanguages": ["JAVASCRIPT"],
+      "description": "Given a grid of integers, print all of its values in **spiral order**.\n\nSpiral order starts at the top-left cell and goes:\n\n1. **RIGHT** along the top row\n2. **DOWN** the right column\n3. **LEFT** along the bottom row\n4. **UP** the left column\n\n...then repeats on the next layer inward, until every cell has been visited exactly once.\n\n### Input\n\n- Line 1: two space-separated integers `r c` — the number of rows and columns.\n- The next `r` lines: each contains `c` space-separated integers — one row of the grid.\n\n### Output\n\nPrint all `r * c` grid values in spiral order, as a single line of space-separated integers.\n\n### Example (non-square grid)\n\nInput:\n```\n2 4\n1 2 3 4\n5 6 7 8\n```\n\nGrid:\n```\n1 2 3 4\n5 6 7 8\n```\n\nTraversal order:\n- Right along the top row: `1 2 3 4`\n- Down the right column (only row 1 is left): `8`\n- Left along the bottom row (only row 1 is left): `7 6 5`\n- (no rows/columns remain to go up)\n\nOutput:\n```\n1 2 3 4 8 7 6 5\n```",
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "starterCode": {
+        "javascript": "const [r, c] = (readLine() ?? '').trim().split(/\\s+/).map(Number);\nconst grid = [];\nfor (let i = 0; i < r; i++) {\n  const row = (readLine() ?? '').trim().split(/\\s+/).map(Number);\n  grid.push(row);\n}\n\n// TODO: walk the grid in spiral order (right, down, left, up, shrinking\n// the boundary each pass) and print all r*c values as one space-separated\n// line via console.log().\n"
+      },
+      "testCases": [
+        {
+          "description": "3x3 square grid",
+          "input": "3 3\n1 2 3\n4 5 6\n7 8 9",
+          "expectedOutput": "1 2 3 6 9 8 7 4 5",
+          "weight": 2
+        },
+        {
+          "description": "wide non-square grid (2 rows x 4 cols)",
+          "input": "2 4\n1 2 3 4\n5 6 7 8",
+          "expectedOutput": "1 2 3 4 8 7 6 5",
+          "weight": 3
+        },
+        {
+          "description": "tall non-square grid (4 rows x 2 cols)",
+          "input": "4 2\n1 2\n3 4\n5 6\n7 8",
+          "expectedOutput": "1 2 4 6 8 7 5 3",
+          "weight": 3
+        },
+        {
+          "description": "single row",
+          "input": "1 5\n1 2 3 4 5",
+          "expectedOutput": "1 2 3 4 5",
+          "weight": 1
+        },
+        {
+          "description": "single column",
+          "input": "5 1\n1\n2\n3\n4\n5",
+          "expectedOutput": "1 2 3 4 5",
+          "weight": 1
+        },
+        {
+          "description": "1x1 grid",
+          "input": "1 1\n42",
+          "expectedOutput": "42",
+          "weight": 1
+        },
+        {
+          "description": "larger 4x5 grid with negative numbers",
+          "input": "4 5\n1 -2 3 4 5\n6 7 8 9 -10\n11 12 13 14 15\n-16 17 18 19 20",
+          "expectedOutput": "1 -2 3 4 5 -10 15 20 19 18 17 -16 11 6 7 8 9 14 13 12",
+          "weight": 2
+        }
+      ]
+    }
+  ]
+}

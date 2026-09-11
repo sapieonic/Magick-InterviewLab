@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Shortest Path in a Grid",
+      "difficulty": "MEDIUM",
+      "supportedLanguages": ["JAVASCRIPT"],
+      "description": "You are given a rectangular grid of cells that are either **open** (`.`) or **blocked** (`#`). Starting at the top-left cell and moving only **up, down, left, or right** (never diagonally) between open cells, find the number of cells on a shortest path to the bottom-right cell.\n\n### Input\n\n- Line 1: two space-separated integers `r` and `c` — the number of rows and columns.\n- The next `r` lines each contain exactly `c` characters with no spaces: `.` for an open cell, `#` for a blocked cell.\n\n### Output\n\nPrint a single integer: the number of cells visited on a shortest path from `(0, 0)` to `(r-1, c-1)`, **counting both the start and end cell**. If no such path exists, print `-1`. If the start cell or the end cell is itself blocked, also print `-1`.\n\n### Example\n\nInput:\n```\n3 3\n...\n.#.\n...\n```\n\nThe center cell is blocked, so the path has to detour around it, e.g. `(0,0) -> (0,1) -> (0,2) -> (1,2) -> (2,2)`.\n\nOutput:\n```\n5\n```\n\nThat path visits 5 cells in total (start and end included), and no shorter route exists.",
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "starterCode": {
+        "javascript": "const first = (readLine() ?? '').trim().split(/\\s+/).map(Number);\nconst r = first[0];\nconst c = first[1];\nconst grid = [];\nfor (let i = 0; i < r; i++) {\n  grid.push(readLine() ?? '');\n}\n\n// TODO: find the number of cells (including both endpoints) on a shortest\n// path from (0, 0) to (r - 1, c - 1), moving only up/down/left/right through\n// open ('.') cells. Print -1 if no path exists, and also -1 if the start or\n// end cell is blocked.\nconsole.log(0);\n"
+      },
+      "testCases": [
+        {
+          "description": "small grid, detour required around a single blocked cell",
+          "input": "3 3\n...\n.#.\n...",
+          "expectedOutput": "5",
+          "weight": 5
+        },
+        {
+          "description": "no path exists: a full column of blocked cells separates start from end",
+          "input": "3 3\n.#.\n.#.\n.#.",
+          "expectedOutput": "-1",
+          "weight": 5
+        },
+        {
+          "description": "start cell itself is blocked",
+          "input": "2 2\n#.\n..",
+          "expectedOutput": "-1",
+          "weight": 5
+        },
+        {
+          "description": "1x1 grid, single open cell is both start and end",
+          "input": "1 1\n.",
+          "expectedOutput": "1",
+          "weight": 1
+        },
+        {
+          "description": "single-row corridor, fully open",
+          "input": "1 5\n.....",
+          "expectedOutput": "5",
+          "weight": 1
+        },
+        {
+          "description": "the direct/naive route is blocked; a much longer serpentine route is the only way through",
+          "input": "5 5\n.....\n####.\n.....\n.####\n.....",
+          "expectedOutput": "17",
+          "weight": 3
+        },
+        {
+          "description": "larger 6x6 grid with a central block, multiple shortest paths exist around it",
+          "input": "6 6\n......\n......\n..##..\n..##..\n......\n......",
+          "expectedOutput": "11",
+          "weight": 2
+        }
+      ]
+    }
+  ]
+}

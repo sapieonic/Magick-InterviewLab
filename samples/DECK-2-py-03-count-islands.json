@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Count Islands and Largest Island",
+      "difficulty": "MEDIUM",
+      "supportedLanguages": ["PYTHON"],
+      "description": "You are given a grid of land and water cells. An **island** is a group of `1` (land) cells connected to each other only **horizontally or vertically** — up, down, left, or right. Two land cells that touch only **diagonally** are considered **separate islands**, not one.\n\nCount how many separate islands the grid contains, and find the size (number of cells) of the largest one.\n\n### Input\n\n- Line 1: two space-separated integers `r c` — the number of rows and columns.\n- The next `r` lines: each a string of exactly `c` characters, each either `1` (land) or `0` (water), with no spaces between them.\n\n### Output\n\nPrint two space-separated integers on one line: the number of islands, then the size of the largest island.\n\nIf the grid has no land at all, print `0 0`.\n\n### Example\n\nInput:\n```\n4 4\n1100\n1100\n0010\n0011\n```\n\nThe top-left `1`s form one 2x2 island (4 cells). Separately, `(2,2)`, `(3,2)`, `(3,3)` are connected up/down/right into a second island (3 cells). Output:\n```\n2 4\n```\n\n### Diagonal example\n\nInput:\n```\n2 2\n10\n01\n```\n\n`(0,0)` and `(1,1)` are diagonal neighbors only — they do **not** touch up/down/left/right — so this is **two** separate islands of size 1 each, not one island of size 2:\n```\n2 1\n```",
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "starterCode": {
+        "python": "import sys\n\ndata = sys.stdin.read().split('\\n')\nheader = data[0].split()\nr, c = int(header[0]), int(header[1])\ngrid = []\nfor i in range(1, r + 1):\n    grid.append(data[i])\n\n# grid[i] is a string of '0'/'1' characters. If you want to mutate a cell\n# (e.g. mark it visited in place), convert that row to a list first:\n#   row = list(grid[i])\n\n# TODO: count the number of islands (1-cells connected only up/down/left/right,\n# never diagonally) and find the size of the largest island.\n# Print: \"<count> <largest>\" -- print \"0 0\" if there is no land at all.\n"
+      },
+      "testCases": [
+        {
+          "description": "two islands of different sizes (4x4)",
+          "input": "4 4\n1100\n1100\n0010\n0011",
+          "expectedOutput": "2 4",
+          "weight": 2
+        },
+        {
+          "description": "diagonal-only touch counts as two separate islands",
+          "input": "2 2\n10\n01",
+          "expectedOutput": "2 1",
+          "weight": 3
+        },
+        {
+          "description": "all water grid",
+          "input": "3 3\n000\n000\n000",
+          "expectedOutput": "0 0",
+          "weight": 3
+        },
+        {
+          "description": "all land grid is one island",
+          "input": "3 3\n111\n111\n111",
+          "expectedOutput": "1 9",
+          "weight": 1
+        },
+        {
+          "description": "single row with gaps",
+          "input": "1 7\n1011010",
+          "expectedOutput": "3 2",
+          "weight": 2
+        },
+        {
+          "description": "1x1 grid, single land cell",
+          "input": "1 1\n1",
+          "expectedOutput": "1 1",
+          "weight": 1
+        },
+        {
+          "description": "larger 6x7 grid with one snaking island",
+          "input": "6 7\n1111111\n0000001\n1111111\n1000000\n1111111\n0000000",
+          "expectedOutput": "1 23",
+          "weight": 2
+        }
+      ]
+    }
+  ]
+}

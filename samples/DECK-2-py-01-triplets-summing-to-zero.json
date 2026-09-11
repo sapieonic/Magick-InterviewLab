@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Triplets Summing to Zero",
+      "difficulty": "MEDIUM",
+      "supportedLanguages": ["PYTHON"],
+      "description": "Given a list of integers (which may include duplicates and negative numbers), find every **unique triplet** of values that sums to zero.\n\n### Input\n- Line 1: an integer `n`, the number of integers.\n- Line 2: `n` space-separated integers (values may repeat, and may be negative).\n\n### Output\nPrint one triplet per line. Each triplet is printed as **three space-separated integers in ascending order** (smallest first, largest last). The lines themselves must appear in **lexicographic order by triplet** — ordered first by the triplet's first value, then by its second value, then by its third value.\n\nIf no triplet sums to zero, print nothing (the expected output is an empty string).\n\n**Uniqueness is by value, not by index.** If several different combinations of positions in the input produce the same three values (e.g. because a value repeats in the input), that triplet must still be printed only **once**.\n\n### Worked example\nInput:\n```\n6\n-1 0 1 2 -1 -4\n```\nOutput:\n```\n-1 -1 2\n-1 0 1\n```\nNote there are two `-1` values in the input, and both appear in the first triplet (`-1 -1 2`) — that's fine, since the triplet itself only repeats a value if the *input* does. What must never happen is printing the *same* triplet, such as `-1 0 1`, more than once just because multiple index combinations produce it.",
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "starterCode": {
+        "python": "import sys\n\n\ndef main():\n    data = sys.stdin.read().split()\n    n = int(data[0])\n    nums = list(map(int, data[1:1 + n]))\n\n    # TODO: find every unique triplet (by value) of numbers in nums that\n    # sums to zero. Print each triplet on its own line as three\n    # space-separated integers, smallest to largest within the triplet,\n    # with the lines themselves in ascending (lexicographic) order by\n    # triplet. Print nothing if there are no such triplets.\n\n\nif __name__ == \"__main__\":\n    main()\n"
+      },
+      "testCases": [
+        {
+          "description": "classic case with two distinct triplets",
+          "input": "6\n-1 0 1 2 -1 -4",
+          "expectedOutput": "-1 -1 2\n-1 0 1",
+          "weight": 2
+        },
+        {
+          "description": "duplicate values whose many index combinations must collapse to ONE printed triplet",
+          "input": "6\n1 -1 0 1 -1 0",
+          "expectedOutput": "-1 0 1",
+          "weight": 4
+        },
+        {
+          "description": "all zeros collapse to the single triplet 0 0 0",
+          "input": "3\n0 0 0",
+          "expectedOutput": "0 0 0",
+          "weight": 4
+        },
+        {
+          "description": "no triplet sums to zero: print nothing",
+          "input": "6\n1 2 3 100 -100 5",
+          "expectedOutput": "",
+          "weight": 4
+        },
+        {
+          "description": "all positive numbers can never sum to zero",
+          "input": "7\n1 2 3 4 5 6 7",
+          "expectedOutput": "",
+          "weight": 1
+        },
+        {
+          "description": "fewer than three elements: no triplet is possible",
+          "input": "2\n3 -3",
+          "expectedOutput": "",
+          "weight": 1
+        },
+        {
+          "description": "longer input with many duplicates and multiple triplets",
+          "input": "30\n5 -12 -15 8 -7 -8 -8 -11 8 -12 6 8 13 2 -13 3 -2 -14 -15 -13 -9 -8 1 4 -15 2 -9 7 5 7",
+          "expectedOutput": "-15 2 13\n-15 7 8\n-14 1 13\n-14 6 8\n-14 7 7\n-13 5 8\n-13 6 7\n-12 4 8\n-12 5 7\n-11 -2 13\n-11 3 8\n-11 4 7\n-11 5 6\n-9 1 8\n-9 2 7\n-9 3 6\n-9 4 5\n-8 1 7\n-8 2 6\n-8 3 5\n-7 1 6\n-7 2 5\n-7 3 4",
+          "weight": 2
+        }
+      ]
+    }
+  ]
+}

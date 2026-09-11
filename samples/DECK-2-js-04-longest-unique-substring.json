@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Longest Substring Without Repeating Characters",
+      "difficulty": "MEDIUM",
+      "supportedLanguages": ["JAVASCRIPT"],
+      "description": "### Problem\n\nRead a single line containing lowercase letters (`a`-`z`) — the line may be **empty**. Find the **longest contiguous substring** that contains no repeated character, and print that substring.\n\nIf more than one substring ties for the longest length, print the one that **starts earliest** in the input.\n\n### Input\n\nOne line of lowercase letters (`0` to `60` characters). The line may be empty.\n\n### Output\n\nThe longest substring with no repeated characters. If the input line is empty, print nothing (the expected output is the empty string).\n\n### Example\n\nInput:\n```\nabcabcbb\n```\n\nOutput:\n```\nabc\n```\n\n`abc` (length 3, starting at index 0) is the longest run with no repeats — later windows such as `bca`, `cab`, and `abc` (again) are also length 3 but start later, so the earliest one, `abc`, is printed.\n\n### Another example (tie-break)\n\nInput:\n```\naabbcc\n```\n\nOutput:\n```\nab\n```\n\nBoth `ab` (index 1-2) and `bc` (index 3-4) are length-2 windows with no repeats, and no longer window exists. Since they tie, the earliest one — `ab` — is printed.",
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "starterCode": {
+        "javascript": "const line = readLine() ?? '';\n\n// TODO: find the longest substring of `line` that contains no repeated\n// character, and print it. If more than one substring ties for the longest\n// length, print the one that starts earliest.\n"
+      },
+      "testCases": [
+        {
+          "description": "normal case with a repeated character",
+          "input": "pwwkew",
+          "expectedOutput": "wke",
+          "weight": 2
+        },
+        {
+          "description": "all characters distinct - whole string is the answer",
+          "input": "abcdefg",
+          "expectedOutput": "abcdefg",
+          "weight": 1
+        },
+        {
+          "description": "all characters identical - single character answer",
+          "input": "aaaaa",
+          "expectedOutput": "a",
+          "weight": 1
+        },
+        {
+          "description": "tie between two equally long windows - earliest start wins",
+          "input": "aabbcc",
+          "expectedOutput": "ab",
+          "weight": 3
+        },
+        {
+          "description": "repeat is not adjacent to the earlier occurrence",
+          "input": "abcabcbb",
+          "expectedOutput": "abc",
+          "weight": 3
+        },
+        {
+          "description": "single character input",
+          "input": "z",
+          "expectedOutput": "z",
+          "weight": 1
+        },
+        {
+          "description": "empty line - expected output is empty",
+          "input": "",
+          "expectedOutput": "",
+          "weight": 3
+        },
+        {
+          "description": "longer input (~50 characters)",
+          "input": "thequickbrownfoxjumpsoverthelazydogagainandagaintoday",
+          "expectedOutput": "thequickbrownf",
+          "weight": 2
+        }
+      ]
+    }
+  ]
+}

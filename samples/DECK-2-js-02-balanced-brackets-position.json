@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Balanced Brackets With Mismatch Position",
+      "difficulty": "MEDIUM",
+      "supportedLanguages": ["JAVASCRIPT"],
+      "description": "Read a single line containing only the characters `(` `)` `[` `]` `{` `}` (the line may be empty). Determine whether the brackets are balanced, and if not, report exactly where the sequence first fails.\n\n### Output\n\nPrint exactly one of the following (casing matters):\n\n- `BALANCED` — every bracket is properly closed, in the correct order.\n- `INVALID i` — the sequence becomes impossible to balance at 0-based index `i`, because the character at `i` is a closing bracket that either:\n  - has nothing currently open, or\n  - does not match the type of the most recently opened, still-unclosed bracket.\n\n  `i` is the index of the **first** character where this happens (scan left to right; stop at the first impossible closer).\n- `UNCLOSED i` — the line has no invalid closing bracket, but at least one opening bracket is never closed. `i` is the index of the **earliest** (leftmost) opening bracket that is still unclosed when the line ends.\n\n### Examples\n\nInput:\n```\n([{}])\n```\nOutput:\n```\nBALANCED\n```\n\nInput:\n```\n([)]\n```\nHere `(` opens at 0, `[` opens at 1, then `)` at index 2 tries to close — but the most recently opened bracket is `[` (from index 1), not `(`. Output:\n```\nINVALID 2\n```\n\nInput:\n```\n(()\n```\nThe `(` at index 0 and the `(` at index 1 both open; the `)` at index 2 closes the one from index 1, leaving the bracket at index 0 unclosed. Output:\n```\nUNCLOSED 0\n```",
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "starterCode": {
+        "javascript": "const line = readLine() ?? '';\n\n// TODO: scan the line left to right, tracking still-open brackets.\n// - if a closing bracket has nothing open, or doesn't match the most\n//   recently opened bracket, print \"INVALID i\" (i = that index) and stop\n// - if the line ends with brackets still open, print \"UNCLOSED i\"\n//   (i = index of the earliest still-unclosed opening bracket)\n// - otherwise print \"BALANCED\"\n"
+      },
+      "testCases": [
+        { "description": "nested, fully balanced", "input": "([{}])", "expectedOutput": "BALANCED", "weight": 1 },
+        { "description": "wrong-type close", "input": "([)]", "expectedOutput": "INVALID 2", "weight": 3 },
+        { "description": "closing bracket with nothing open", "input": ")", "expectedOutput": "INVALID 0", "weight": 3 },
+        { "description": "unclosed opener remains at end", "input": "(()", "expectedOutput": "UNCLOSED 0", "weight": 3 },
+        { "description": "empty line", "input": "", "expectedOutput": "BALANCED", "weight": 1 },
+        { "description": "single opening bracket", "input": "(", "expectedOutput": "UNCLOSED 0", "weight": 2 },
+        { "description": "longer balanced input", "input": "{[()()]}", "expectedOutput": "BALANCED", "weight": 2 },
+        { "description": "mismatch not at the start", "input": "()(]", "expectedOutput": "INVALID 3", "weight": 2 }
+      ]
+    }
+  ]
+}

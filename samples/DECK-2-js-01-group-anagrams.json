@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Group Anagrams",
+      "difficulty": "MEDIUM",
+      "supportedLanguages": ["JAVASCRIPT"],
+      "description": "Read a single line of space-separated lowercase words from stdin. Group the words so that any two words that are anagrams of each other (they use exactly the same letters, with the same multiplicity, just possibly in a different order) fall into the same group.\n\n### Input\nA single line containing space-separated lowercase words.\n```\neat tea tan ate nat bat\n```\n\n### Output\nPrint one group per line, each group's words separated by single spaces, following these rules exactly:\n\n1. **Within each group**, sort the words alphabetically ascending.\n2. **Order the groups** by comparing each group's (already-sorted) first word, alphabetically ascending.\n3. **Duplicate words are kept.** If the same word appears twice in the input, it appears twice within its group — it is not de-duplicated.\n\n### Example\nInput:\n```\neat tea tan ate nat bat\n```\nOutput:\n```\nate eat tea\nbat\nnat tan\n```\n`eat`, `tea`, `ate` are anagrams of each other, sorted alphabetically to `ate eat tea`. `tan`, `nat` are anagrams, sorted to `nat tan`. `bat` is alone in its group. The three groups are then ordered by their first word: `ate` < `bat` < `nat`.",
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "starterCode": {
+        "javascript": "const line = readLine() ?? '';\nconst words = line.trim().split(/\\s+/).filter(Boolean);\n\n// TODO: group `words` so that anagrams end up together, sort each group's\n// words alphabetically ascending, order the groups by their (sorted) first\n// word alphabetically ascending, and print one group per line as\n// space-separated words. Keep duplicate words (do not de-duplicate).\n"
+      },
+      "testCases": [
+        {
+          "description": "normal mixed case: several anagram groups plus a singleton",
+          "input": "eat tea tan ate nat bat",
+          "expectedOutput": "ate eat tea\nbat\nnat tan",
+          "weight": 2
+        },
+        {
+          "description": "all words are anagrams of each other -> one group",
+          "input": "listen silent enlist inlets tinsel",
+          "expectedOutput": "enlist inlets listen silent tinsel",
+          "weight": 1
+        },
+        {
+          "description": "no two words are anagrams -> every group has size 1",
+          "input": "cat dog bird fish",
+          "expectedOutput": "bird\ncat\ndog\nfish",
+          "weight": 1
+        },
+        {
+          "description": "duplicate words are kept, not de-duplicated",
+          "input": "cat cat dog act",
+          "expectedOutput": "act cat cat\ndog",
+          "weight": 3
+        },
+        {
+          "description": "single word input",
+          "input": "hello",
+          "expectedOutput": "hello",
+          "weight": 1
+        },
+        {
+          "description": "words of differing lengths grouped correctly",
+          "input": "a ab abc ba bca cab",
+          "expectedOutput": "a\nab ba\nabc bca cab",
+          "weight": 1
+        },
+        {
+          "description": "longer input with multiple groups, a duplicate, and a singleton, exercising group ordering",
+          "input": "listen silent enlist eat tea ate cat act dog god listen bat tab tan",
+          "expectedOutput": "act cat\nate eat tea\nbat tab\ndog god\nenlist listen listen silent\ntan",
+          "weight": 3
+        }
+      ]
+    }
+  ]
+}

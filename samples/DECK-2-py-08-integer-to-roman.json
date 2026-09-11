@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Integer to Roman Numeral",
+      "difficulty": "MEDIUM",
+      "supportedLanguages": ["PYTHON"],
+      "description": "### Problem\n\nRead one integer `n` from standard input and print its Roman numeral representation, in uppercase.\n\n### Input\n\nA single line containing one integer `n`, with `1 <= n <= 3999`.\n\n### Output\n\nA single line: the uppercase Roman numeral for `n`.\n\n### Symbol table\n\nRoman numerals are built from these symbols:\n\n| Symbol | I | V | X | L | C | D | M |\n|---|---|---|---|---|---|---|---|\n| Value | 1 | 5 | 10 | 50 | 100 | 500 | 1000 |\n\nNormally symbols are combined left to right from largest to smallest, adding their values, e.g. `23` is `XX` (10+10) followed by `III` (1+1+1), giving `XXIII`.\n\n### Subtractive forms\n\nRoman numerals avoid writing the same symbol four times in a row. Instead, six specific subtractive pairs are used, where a smaller-value symbol placed *before* a larger one means \"subtract\":\n\n- `IV` = 4 (5 - 1)\n- `IX` = 9 (10 - 1)\n- `XL` = 40 (50 - 10)\n- `XC` = 90 (100 - 10)\n- `CD` = 400 (500 - 100)\n- `CM` = 900 (1000 - 100)\n\nThese are the *only* subtractive pairs that appear in valid Roman numerals — there is no `IL`, `IC`, etc.\n\n**Worked examples:**\n\n- `n = 4` &rarr; not `IIII`, but the subtractive form `IV`.\n- `n = 1994` &rarr; broken into `1000 + 900 + 90 + 4`, which is `M` + `CM` + `XC` + `IV`, giving `MCMXCIV`. Notice this single number uses three of the six subtractive pairs at once.\n\n### Your task\n\nBuild the numeral yourself from the digits/values of `n` (no Roman-numeral library helper is available or expected — none exists in the standard library anyway). A common approach: walk a table of (value, symbol) pairs from largest to smallest, repeatedly subtracting the value and appending the symbol while `n` is still large enough.",
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "starterCode": {
+        "python": "import sys\n\nn = int(sys.stdin.readline().strip())\n\n# TODO: convert n to its uppercase Roman numeral representation and print it.\n# Remember the six subtractive forms: IV, IX, XL, XC, CD, CM.\n"
+      },
+      "testCases": [
+        { "description": "plain additive number, no subtractive forms", "input": "23", "expectedOutput": "XXIII", "weight": 1 },
+        { "description": "subtractive form IV (4)", "input": "4", "expectedOutput": "IV", "weight": 1 },
+        { "description": "subtractive form IX (9)", "input": "9", "expectedOutput": "IX", "weight": 1 },
+        { "description": "several subtractive forms combined (CM, XC, IV)", "input": "1994", "expectedOutput": "MCMXCIV", "weight": 3 },
+        { "description": "minimum boundary", "input": "1", "expectedOutput": "I", "weight": 1 },
+        { "description": "maximum boundary", "input": "3999", "expectedOutput": "MMMCMXCIX", "weight": 3 },
+        { "description": "round thousand", "input": "2000", "expectedOutput": "MM", "weight": 1 },
+        { "description": "zero digit in the middle (hundreds place), mid-range value", "input": "1050", "expectedOutput": "ML", "weight": 2 }
+      ]
+    }
+  ]
+}

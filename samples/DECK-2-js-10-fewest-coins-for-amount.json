@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Fewest Coins to Make an Amount",
+      "difficulty": "MEDIUM",
+      "supportedLanguages": ["JAVASCRIPT"],
+      "description": "Given a set of coin denominations and a target amount, find the **minimum number of coins** needed to make exactly that amount. Each denomination may be used an **unlimited number of times**.\n\n### Input\n- Line 1: two space-separated integers `n` and `amount` — the number of distinct coin denominations and the target amount.\n- Line 2: `n` space-separated distinct positive integers — the coin denominations.\n\n### Output\nPrint a single integer: the minimum number of coins that sum to exactly `amount`. If it is impossible to make that amount using the given denominations, print `-1`.\n\n### Example\nInput:\n```\n3 11\n1 2 5\n```\nOutput:\n```\n3\n```\n(11 = 5 + 5 + 1, using 3 coins)\n\n### Notes\n- Each coin denomination may be used any number of times (unlimited supply).\n- If `amount` is `0`, the answer is `0` (no coins needed).\n- `1 <= n <= 20`, `0 <= amount <= 2000`, and coin denominations are distinct positive integers no greater than `2000`.",
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "starterCode": {
+        "javascript": "const firstLine = (readLine() ?? '').trim();\nconst [n, amount] = firstLine.split(/\\s+/).map(Number);\n\nconst secondLine = (readLine() ?? '').trim();\nconst coins = secondLine.split(/\\s+/).filter(Boolean).map(Number);\n\n// TODO: compute the minimum number of coins (each may be used unlimited\n// times) from `coins` that sum to exactly `amount`, and print it.\n// Print -1 if it cannot be made, and 0 if amount is 0.\n"
+      },
+      "testCases": [
+        {
+          "description": "normal case: coins 1 2 5, amount 11",
+          "input": "3 11\n1 2 5",
+          "expectedOutput": "3",
+          "weight": 2
+        },
+        {
+          "description": "greedy trap: coins 1 3 4, amount 6 — greedy (4+1+1=3) is wrong, optimal is 3+3=2",
+          "input": "3 6\n1 3 4",
+          "expectedOutput": "2",
+          "weight": 5
+        },
+        {
+          "description": "impossible amount: coins 3 7 cannot make 5",
+          "input": "2 5\n3 7",
+          "expectedOutput": "-1",
+          "weight": 4
+        },
+        {
+          "description": "amount is zero: no coins needed",
+          "input": "3 0\n1 5 10",
+          "expectedOutput": "0",
+          "weight": 3
+        },
+        {
+          "description": "single denomination that evenly divides the amount",
+          "input": "1 15\n5",
+          "expectedOutput": "3",
+          "weight": 2
+        },
+        {
+          "description": "single denomination that does not divide the amount",
+          "input": "1 7\n5",
+          "expectedOutput": "-1",
+          "weight": 3
+        },
+        {
+          "description": "larger amount with a standard denomination set",
+          "input": "4 999\n1 5 10 25",
+          "expectedOutput": "45",
+          "weight": 3
+        }
+      ]
+    }
+  ]
+}

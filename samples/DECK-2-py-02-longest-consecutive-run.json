@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Longest Consecutive Run",
+      "difficulty": "MEDIUM",
+      "supportedLanguages": ["PYTHON"],
+      "description": "You are given a collection of integers, possibly in arbitrary order, possibly with duplicates and negatives. Treat them as a **set of values** and find the longest run of consecutive integers (each one exactly one more than the last) such that every integer in the run is present somewhere in the input.\n\nThe values that make up a run do **not** need to be adjacent to each other in the input — that's what makes this more than a simple left-to-right scan. A duplicate value counts only once toward membership in the set; it never lengthens a run by itself.\n\n### Input\n\n- Line 1: a single integer `n` (`n >= 1`), the count of numbers that follow.\n- Line 2: `n` space-separated integers, in any order, possibly with duplicates and negative numbers.\n\n### Output\n\nPrint one line with two space-separated integers: `length start`, where `length` is the length of the longest run of consecutive integers present in the input, and `start` is the smallest value in that run.\n\nIf multiple runs share the maximum length, output the one with the **smallest** `start`.\n\n### Example\n\nInput:\n```\n6\n100 4 200 1 3 2\n```\n\nHere the values `1, 2, 3, 4` are all present (scattered among the input, not adjacent to each other), forming a run of length 4 starting at 1 — longer than any run `100` or `200` could start. So the output is:\n```\n4 1\n```\n\n### Notes\n\n- Duplicates count once: `1 1 2 2 3` still only gives a run of length 3 (`1, 2, 3`), not more.\n- Ties on length break by the smaller `start`: if both `1..3` and `10..12` are present, the longer run being equal, report `3 1`, not `3 10`.",
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "starterCode": {
+        "python": "import sys\n\ndata = sys.stdin.read().split()\nn = int(data[0])\nnums = list(map(int, data[1:1 + n]))\n\n# TODO: find the longest run of consecutive integers present among nums\n# (a value that appears more than once still only counts once).\n# Print two integers on one line: \"length start\", where start is the\n# smallest value of that run. If more than one run ties for the longest\n# length, print the one with the smallest start.\n"
+      },
+      "testCases": [
+        {
+          "description": "classic scattered case: values not adjacent in input, run 1-4 beats isolated 100/200",
+          "input": "6\n100 4 200 1 3 2",
+          "expectedOutput": "4 1",
+          "weight": 1
+        },
+        {
+          "description": "duplicates must not inflate the run length beyond the distinct consecutive span",
+          "input": "6\n1 1 2 2 3 3",
+          "expectedOutput": "3 1",
+          "weight": 3
+        },
+        {
+          "description": "tie between two equally long runs (1-3 and 10-12): must report the smaller start",
+          "input": "6\n10 1 11 2 12 3",
+          "expectedOutput": "3 1",
+          "weight": 3
+        },
+        {
+          "description": "all values identical collapse to a run of length 1",
+          "input": "5\n7 7 7 7 7",
+          "expectedOutput": "1 7",
+          "weight": 1
+        },
+        {
+          "description": "single element",
+          "input": "1\n42",
+          "expectedOutput": "1 42",
+          "weight": 1
+        },
+        {
+          "description": "negatives spanning zero form one run",
+          "input": "4\n-2 -1 0 1",
+          "expectedOutput": "4 -2",
+          "weight": 1
+        },
+        {
+          "description": "larger shuffled input with noise and duplicates around a 16-long run",
+          "input": "26\n100 17 14 200 -50 11 10 15 20 10 16 103 6 19 77 18 7 101 77 9 5 12 13 5 8 -49",
+          "expectedOutput": "16 5",
+          "weight": 2
+        }
+      ]
+    }
+  ]
+}
