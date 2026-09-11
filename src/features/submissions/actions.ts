@@ -132,6 +132,24 @@ export async function createSubmissionAction(input: {
       where: { questionId: parsed.questionId },
       select: { id: true, weight: true },
     });
+
+    // The candidate ran real tests, but not one of the ids they reported is a
+    // test this question currently has — the admin edited the question (which
+    // re-keys its test cases) while this tab was open. Scoring by id would
+    // silently record 0/N under a screen full of green rows, and a
+    // single-submission interview would give no retry. Refuse instead, so the
+    // candidate re-runs against the current tests rather than losing the
+    // attempt to a race they could not see.
+    if (authoritativeTests.length > 0 && parsed.results.length > 0) {
+      const currentIds = new Set(authoritativeTests.map((t) => t.id));
+      const anyMatch = parsed.results.some((r) => currentIds.has(r.testCaseId));
+      if (!anyMatch) {
+        throw new AppError(
+          'This question changed while you were working on it. Re-run the tests and submit again.',
+        );
+      }
+    }
+
     const breakdown = scoreSubmission(authoritativeTests, parsed.results);
 
     // Normalised to plain JSON: Prisma's Json input rejects `undefined`, and

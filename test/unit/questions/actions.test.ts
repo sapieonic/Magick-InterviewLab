@@ -100,9 +100,13 @@ beforeEach(() => {
   h.getCurrentUser.mockResolvedValue(actor());
   h.db.question.create.mockResolvedValue({ id: 'q-new' });
   h.db.question.update.mockResolvedValue({ id: 'q-1' });
-  h.db.question.findUnique.mockResolvedValue({ id: 'q-1' });
+  // The update path now reads the question's existing test-case ids so it can
+  // diff rather than replace. Default: a question with no rows yet.
+  h.db.question.findUnique.mockResolvedValue({ id: 'q-1', testCases: [] });
   h.db.testCase.deleteMany.mockResolvedValue({ count: 0 });
   h.db.testCase.createMany.mockResolvedValue({ count: 0 });
+  h.db.testCase.create.mockResolvedValue({ id: 'tc-new' });
+  h.db.testCase.update.mockResolvedValue({ id: 'tc-upd' });
 });
 
 describe('question actions — authorization', () => {
@@ -138,67 +142,144 @@ describe('question actions — authorization', () => {
 });
 
 /**
- * The editor sends the intended final list of test cases, so saving has to
- * *replace* what is stored rather than merge with it. Doing the delete and
- * the insert in one transaction is what stops a half-applied save leaving a
- * question scored against rows the admin thought they had removed — and what
- * stops orphaned rows surviving a failure between the two statements.
+ * The editor sends the intended final list of test cases, each surviving row
+ * carrying its persisted id. Saving *diffs* against what is stored rather than
+ * replacing it: a row with a known id is updated in place so its id stays
+ * stable, a row without one is created, and only rows the admin actually
+ * removed are deleted. Stable ids are what keep a submission already scored
+ * against those test cases scored — a delete-and-recreate would re-mint every
+ * id and silently zero every in-flight submission. All of it runs in one
+ * transaction so a half-applied save can never strand the question.
  */
-describe('saveQuestionAction — test cases are replaced transactionally', () => {
-  it('deletes the existing rows and re-inserts the submitted ones inside one transaction', async () => {
+describe('saveQuestionAction — test cases are diffed by id in one transaction', () => {
+  /** The `data` handed to each `testCase.update`, keyed by the row id. */
+  function updatedTestCases(): Array<{ where: { id: string }; data: Record<string, unknown> }> {
+    return h.db.testCase.update.mock.calls.map(
+      (call) => call[0] as { where: { id: string }; data: Record<string, unknown> },
+    );
+  }
+  /** The `data` handed to each single-row `testCase.create`. */
+  function singlyCreatedTestCases(): Array<Record<string, unknown>> {
+    return h.db.testCase.create.mock.calls.map(
+      (call) => (call[0] as { data: Record<string, unknown> }).data,
+    );
+  }
+
+  it('runs the whole save inside exactly one transaction', async () => {
     const result = await saveQuestionAction(
-      payload({
-        id: 'q-1',
-        testCases: [
-          testCase({ input: 'a', expectedOutput: 'A' }),
-          testCase({ input: 'b', expectedOutput: 'B' }),
-        ],
-      }),
+      payload({ id: 'q-1', testCases: [testCase({ input: 'a' })] }),
     );
 
     expect(result).toEqual({ ok: true, data: { id: 'q-1', created: false } });
     expect(h.db.$transaction).toHaveBeenCalledTimes(1);
     expect(typeof h.db.$transaction.mock.calls[0]?.[0]).toBe('function');
-    expect(h.db.testCase.deleteMany).toHaveBeenCalledWith({ where: { questionId: 'q-1' } });
-    // Ordering matters: an insert before the delete would wipe the new rows.
-    const deletedAt = h.db.testCase.deleteMany.mock.invocationCallOrder[0] ?? 0;
-    const createdAt = h.db.testCase.createMany.mock.invocationCallOrder[0] ?? 0;
-    expect(deletedAt).toBeLessThan(createdAt);
   });
 
-  it('numbers the inserted rows 0..n-1 in the order they were submitted', async () => {
+  // This is the guarantee the whole fix exists for: a title-only edit must not
+  // disturb a single test-case id, or every open submission scores 0.
+  it('updates an existing row in place — its id survives, nothing is recreated or deleted', async () => {
+    h.db.question.findUnique.mockResolvedValue({
+      id: 'q-1',
+      testCases: [{ id: 't1' }, { id: 't2' }],
+    });
+
     await saveQuestionAction(
       payload({
         id: 'q-1',
         testCases: [
-          testCase({ input: 'first' }),
-          testCase({ input: 'second' }),
-          testCase({ input: 'third' }),
+          { id: 't1', ...testCase({ input: 'a', expectedOutput: 'A' }) },
+          { id: 't2', ...testCase({ input: 'b', expectedOutput: 'B' }) },
         ],
       }),
     );
 
-    expect(createdTestCases().map((row) => [row.input, row.position])).toEqual([
-      ['first', 0],
-      ['second', 1],
-      ['third', 2],
+    const updates = updatedTestCases();
+    expect(updates.map((u) => u.where.id)).toEqual(['t1', 't2']);
+    expect(updates.map((u) => [u.data.input, u.data.position])).toEqual([
+      ['a', 0],
+      ['b', 1],
     ]);
-    expect(createdTestCases().every((row) => row.questionId === 'q-1')).toBe(true);
+    expect(h.db.testCase.create).not.toHaveBeenCalled();
+    expect(h.db.testCase.createMany).not.toHaveBeenCalled();
+    expect(h.db.testCase.deleteMany).not.toHaveBeenCalled();
   });
 
-  it('still clears the old rows when the admin removes every test case', async () => {
+  it('creates a brand-new row (no id) while leaving the existing ones in place', async () => {
+    h.db.question.findUnique.mockResolvedValue({ id: 'q-1', testCases: [{ id: 't1' }] });
+
+    await saveQuestionAction(
+      payload({
+        id: 'q-1',
+        testCases: [{ id: 't1', ...testCase({ input: 'keep' }) }, testCase({ input: 'added' })],
+      }),
+    );
+
+    expect(updatedTestCases().map((u) => u.where.id)).toEqual(['t1']);
+    const created = singlyCreatedTestCases();
+    expect(created).toHaveLength(1);
+    expect([created[0]?.input, created[0]?.position, created[0]?.questionId]).toEqual([
+      'added',
+      1,
+      'q-1',
+    ]);
+    expect(h.db.testCase.deleteMany).not.toHaveBeenCalled();
+  });
+
+  it('deletes only the rows the admin removed, by id, and keeps the survivor', async () => {
+    h.db.question.findUnique.mockResolvedValue({
+      id: 'q-1',
+      testCases: [{ id: 't1' }, { id: 't2' }],
+    });
+
+    await saveQuestionAction(
+      payload({ id: 'q-1', testCases: [{ id: 't1', ...testCase({ input: 'keep' }) }] }),
+    );
+
+    expect(updatedTestCases().map((u) => u.where.id)).toEqual(['t1']);
+    expect(h.db.testCase.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['t2'] } } });
+  });
+
+  // A stale, forged, or copied id must never let this question adopt another
+  // question's test case; an unowned id is treated as a new row.
+  it('treats a client id this question does not own as a new row, never adopting it', async () => {
+    h.db.question.findUnique.mockResolvedValue({ id: 'q-1', testCases: [{ id: 't1' }] });
+
+    await saveQuestionAction(
+      payload({ id: 'q-1', testCases: [{ id: 'foreign', ...testCase({ input: 'x' }) }] }),
+    );
+
+    // 'foreign' is not updated (it is not owned); it is created fresh, and the
+    // real owned row t1 (now absent from the payload) is deleted.
+    expect(h.db.testCase.update).not.toHaveBeenCalled();
+    expect(singlyCreatedTestCases().map((c) => c.input)).toEqual(['x']);
+    expect(h.db.testCase.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['t1'] } } });
+  });
+
+  it('clears every row by id when the admin removes them all', async () => {
+    h.db.question.findUnique.mockResolvedValue({
+      id: 'q-1',
+      testCases: [{ id: 't1' }, { id: 't2' }],
+    });
+
     await saveQuestionAction(payload({ id: 'q-1', testCases: [] }));
 
-    expect(h.db.testCase.deleteMany).toHaveBeenCalledWith({ where: { questionId: 'q-1' } });
+    expect(h.db.testCase.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['t1', 't2'] } } });
+    expect(h.db.testCase.create).not.toHaveBeenCalled();
     expect(h.db.testCase.createMany).not.toHaveBeenCalled();
   });
 
-  it('creates the question first on the new-question path, and deletes nothing', async () => {
-    const result = await saveQuestionAction(payload({ testCases: [testCase()] }));
+  it('creates the question first on the new-question path via createMany, and deletes nothing', async () => {
+    const result = await saveQuestionAction(
+      payload({ testCases: [testCase({ input: 'first' }), testCase({ input: 'second' })] }),
+    );
 
     expect(result).toEqual({ ok: true, data: { id: 'q-new', created: true } });
     expect(h.db.testCase.deleteMany).not.toHaveBeenCalled();
-    expect(createdTestCases()[0]?.questionId).toBe('q-new');
+    expect(createdTestCases().map((row) => [row.input, row.position])).toEqual([
+      ['first', 0],
+      ['second', 1],
+    ]);
+    expect(createdTestCases().every((row) => row.questionId === 'q-new')).toBe(true);
   });
 
   it('refuses to save against a question id that no longer exists', async () => {

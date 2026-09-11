@@ -393,6 +393,13 @@ export function Workspace({ data }: { data: WorkspaceData }) {
       toast.success(`Submitted — scored ${response.data.score}%`);
       // Pull the fresh submission counts into the rail and the home page.
       router.refresh();
+    } catch (error) {
+      // `createSubmissionAction` maps server-side failures to `{ok:false}`, but
+      // the call itself can still reject on the transport — a dropped
+      // connection, a 500 from the RSC endpoint, a chunk-load failure. Without
+      // this catch the dialog would sit open with the spinner stopped and no
+      // message, silently losing the most important action in the product.
+      setSubmitError(messageOf(error));
     } finally {
       setSubmitting(false);
     }

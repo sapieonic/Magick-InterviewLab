@@ -35,9 +35,21 @@ interface QuestionProgress {
   bestScore: number | null;
 }
 
+/**
+ * A question can sit on more than one interview, and a submission belongs to
+ * exactly one of them. Keying progress on the question id alone let one
+ * interview's score and count show up against the *same question in a
+ * different interview* the candidate had never worked — so the map is keyed
+ * on the (interview, question) pair. `progressKey` is the single source of
+ * that key so the writer and the reader cannot drift.
+ */
+function progressKey(interviewId: string, questionId: string): string {
+  return `${interviewId}:${questionId}`;
+}
+
 /** Best score wins, not latest: a candidate is judged on their best attempt. */
-function progressFor(map: Map<string, QuestionProgress>, questionId: string): QuestionProgress {
-  return map.get(questionId) ?? { submissionCount: 0, bestScore: null };
+function progressFor(map: Map<string, QuestionProgress>, key: string): QuestionProgress {
+  return map.get(key) ?? { submissionCount: 0, bestScore: null };
 }
 
 async function loadProgress(
@@ -51,8 +63,11 @@ async function loadProgress(
   const [submissions, drafts] = await Promise.all([
     prisma.submission.findMany({
       where: { candidateId, interviewId: { in: interviewIds } },
-      select: { questionId: true, score: true },
+      select: { interviewId: true, questionId: true, score: true },
     }),
+    // A draft carries no interview dimension (it is keyed on candidate +
+    // question + language), so it legitimately applies to every interview that
+    // includes the question — unlike a submission, which belongs to one.
     prisma.codeDraft.findMany({
       where: { candidateId },
       select: { questionId: true },
@@ -60,12 +75,13 @@ async function loadProgress(
   ]);
 
   for (const submission of submissions) {
-    const current = progress.get(submission.questionId);
+    const key = progressKey(submission.interviewId, submission.questionId);
+    const current = progress.get(key);
     if (current) {
       current.submissionCount += 1;
       current.bestScore = Math.max(current.bestScore ?? 0, submission.score);
     } else {
-      progress.set(submission.questionId, {
+      progress.set(key, {
         submissionCount: 1,
         bestScore: submission.score,
       });
@@ -79,7 +95,11 @@ async function loadProgress(
 /** The candidate home: every interview assigned to them, with per-question state. */
 export async function listCandidateAssignments(candidateId: string): Promise<AssignmentSummary[]> {
   const assignments = await prisma.interviewAssignment.findMany({
-    where: { candidateId },
+    // A DRAFT interview is "not visible to candidates" (the admin is told
+    // exactly that), and an ARCHIVED one is retired and refuses submissions —
+    // so neither belongs on the candidate's home. Without this filter an
+    // assigned draft appeared here, opened, and stamped the clock.
+    where: { candidateId, interview: { status: 'PUBLISHED' } },
     orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
     include: {
       interview: {
@@ -115,7 +135,7 @@ export async function listCandidateAssignments(candidateId: string): Promise<Ass
       allowMultipleSubmissions: assignment.interview.allowMultipleSubmissions,
     },
     questions: assignment.interview.questions.map<QuestionNavItem>((link, index) => {
-      const state = progressFor(progress, link.questionId);
+      const state = progressFor(progress, progressKey(assignment.interview.id, link.questionId));
       return {
         id: link.question.id,
         title: link.question.title,
@@ -142,7 +162,14 @@ export async function startAssignmentIfNeeded(
   assignmentId: string,
 ): Promise<void> {
   await prisma.interviewAssignment.updateMany({
-    where: { id: assignmentId, candidateId, status: 'ASSIGNED' },
+    // Only a PUBLISHED interview starts the clock: opening a draft or an
+    // archived interview must never burn the candidate's timed window.
+    where: {
+      id: assignmentId,
+      candidateId,
+      status: 'ASSIGNED',
+      interview: { status: 'PUBLISHED' },
+    },
     data: { status: 'IN_PROGRESS', startedAt: new Date() },
   });
 }
@@ -158,7 +185,10 @@ export async function loadWorkspace(
   questionId: string,
 ): Promise<WorkspaceData | null> {
   const assignment = await prisma.interviewAssignment.findFirst({
-    where: { id: assignmentId, candidateId },
+    // A candidate may only open a PUBLISHED interview. A DRAFT is not yet
+    // visible and an ARCHIVED one is retired; both resolve to notFound() so
+    // the URL cannot be used to sit an interview the admin has not released.
+    where: { id: assignmentId, candidateId, interview: { status: 'PUBLISHED' } },
     include: {
       interview: {
         include: {
@@ -242,7 +272,10 @@ export async function loadWorkspace(
     },
     question: workspaceQuestion,
     questions: assignment.interview.questions.map<QuestionNavItem>((link, position) => {
-      const state = progressFor(progressState.progress, link.questionId);
+      const state = progressFor(
+        progressState.progress,
+        progressKey(assignment.interview.id, link.questionId),
+      );
       return {
         id: link.question.id,
         title: link.question.title,

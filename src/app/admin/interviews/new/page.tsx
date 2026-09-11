@@ -1,11 +1,13 @@
 import type { Metadata } from 'next';
+import { requireAdminPage } from '@/features/auth/guards';
 import { InterviewForm } from '@/components/admin/interview-form';
 import { PageHeader } from '@/components/admin/page-header';
 import { Card, CardContent } from '@/components/ui/card';
 
 export const metadata: Metadata = { title: 'New interview' };
 
-export default function NewInterviewPage() {
+export default async function NewInterviewPage() {
+  await requireAdminPage();
   return (
     <div className="mx-auto max-w-2xl">
       <PageHeader

@@ -390,6 +390,30 @@ describe('py-runner.js source contract', () => {
     expect(source).toContain('indexURL');
   });
 
+  /**
+   * The network surfaces are revoked only AFTER `loadPyodide` — Pyodide needs
+   * `fetch` to download the runtime, and candidate code runs afterwards. If
+   * hardening ever moved before the load it would break init; if it were
+   * dropped, `import js; js.fetch(...)` would reach the network again. The
+   * ordering and the presence are both verified end to end by
+   * `test/e2e/python-execution.spec.ts`; this pins them cheaply against an
+   * accidental edit. `postMessage`/`close` must stay callable (the worker
+   * replies through them), so they must NOT appear in the revoked set.
+   */
+  it('hardens the worker globals after Pyodide has loaded', () => {
+    expect(source).toContain('hardenGlobalScope');
+    const loadAt = source.indexOf('loadPyodide({');
+    const hardenAt = source.lastIndexOf('hardenGlobalScope();');
+    expect(loadAt).toBeGreaterThan(-1);
+    expect(hardenAt).toBeGreaterThan(loadAt);
+    for (const name of ['fetch', 'XMLHttpRequest', 'WebSocket']) {
+      expect(source).toContain(`'${name}'`);
+    }
+    // The worker's own reply channel must survive hardening.
+    expect(source).not.toMatch(/blockedCallables\s*=\s*\[[^\]]*'postMessage'/s);
+    expect(source).not.toMatch(/blockedCallables\s*=\s*\[[^\]]*'close'/s);
+  });
+
   it('compiles before exec so a SyntaxError is classified as one', () => {
     expect(source).toContain("compile(source, _MVIL_FILENAME, 'exec')");
     expect(source).toContain('except SyntaxError as exc');

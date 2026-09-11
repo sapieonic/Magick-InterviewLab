@@ -71,6 +71,17 @@ on the host:
 docker compose up -d db
 ```
 
+The `db` service is published on host port **5433**, not 5432, so it cannot
+collide with a Postgres you may already run locally. Point the host app at it
+by setting the port in `.env` accordingly:
+
+```bash
+DATABASE_URL="postgresql://interviewlab:interviewlab@localhost:5433/interviewlab?schema=public"
+```
+
+(The default in `.env.example` is `5432` for a Postgres you run yourself; the
+compose `db` service is `5433`. Override `POSTGRES_PORT` to change it.)
+
 ### Setting the admin password
 
 The bootstrap admin is configured entirely through the environment, and the
@@ -305,10 +316,19 @@ three reasons that compound:
    DOM, no cookies, no `localStorage`, and — critically — `terminate()`, which
    is the only reliable way to stop an infinite loop.
 
-The worker additionally revokes `fetch`, `XMLHttpRequest`, `WebSocket`,
-`importScripts`, `indexedDB` and `caches` before user code runs, so a
-candidate program cannot call home or reach internal services from the
-reviewer's browser.
+Both workers revoke the network and storage surfaces so a candidate program
+cannot call home or reach internal services from the reviewer's browser. The
+JavaScript worker removes `fetch`, `XMLHttpRequest`, `WebSocket`,
+`importScripts`, `indexedDB` and `caches` before user code runs. The Python
+worker does the same **after** Pyodide has finished loading — the ~10MB runtime
+needs `fetch` to download, and candidate code runs strictly afterwards; because
+Pyodide's `js` module proxies the worker's global scope, revoking `self.fetch`
+also closes the `import js; js.fetch(...)` bridge. This hardens the
+honest-mistake path; as with the JavaScript worker it is **not** a security
+boundary — a candidate whose code runs in their own browser can always read the
+test cases (see _Test cases are not secret_ above), so treat client-side
+execution as advisory and add a `RemoteSandboxExecutor` before it needs to be
+one.
 
 Pyodide is used for Python exactly as the brief specified.
 
@@ -352,25 +372,39 @@ this application never needs rich option rendering.
 
 ## Security model
 
-| Concern             | Control                                                                                                                                                                                                                 |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Password storage    | Argon2id (19 MiB, t=2, p=1 — OWASP baseline). Plaintext is never stored, logged, or returned.                                                                                                                           |
-| Session             | 256-bit opaque token in an `HttpOnly`, `SameSite=Lax`, `Secure`-in-production cookie. Only the SHA-256 is stored.                                                                                                       |
-| Revocation          | Password change, admin reset and deactivation all delete every session for that user.                                                                                                                                   |
-| Authorization       | Enforced in Server Components and in **every** Server Action via `requireAdmin()` / `requireCandidate()`. Hiding a nav item is presentation, never a control.                                                           |
-| Object-level access | A candidate's workspace re-verifies that the assignment is theirs _and_ that the question belongs to that interview. Anything else is a 404, not a 403 — existence does not leak.                                       |
-| User enumeration    | Login returns one message for unknown-email and wrong-password, and performs a dummy Argon2 verification on the unknown-email path so the timing matches. Account-inactive is only reported _after_ a correct password. |
-| Open redirect       | `?next=` is honoured only for same-origin absolute paths.                                                                                                                                                               |
-| Input validation    | Zod at every network boundary, server-side, before any database call.                                                                                                                                                   |
-| Secret exposure     | `server-only` on the server env module makes a browser import a build failure.                                                                                                                                          |
-| Candidate code      | Runs in the candidate's browser, in a worker with network APIs revoked. It cannot reach the server's environment, filesystem, database or internal network.                                                             |
-| XSS                 | Markdown is escaped before rendering; candidate source code and program output are rendered as text, never as HTML.                                                                                                     |
-| Headers             | `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy` set globally.                                                                                                                |
+| Concern             | Control                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Password storage    | Argon2id (19 MiB, t=2, p=1 — OWASP baseline). Plaintext is never stored, logged, or returned.                                                                                                                                                                                                                                                                                                                             |
+| Session             | 256-bit opaque token in an `HttpOnly`, `SameSite=Lax`, `Secure`-in-production cookie. Only the SHA-256 is stored.                                                                                                                                                                                                                                                                                                         |
+| Revocation          | Password change, admin reset and deactivation all delete every session for that user.                                                                                                                                                                                                                                                                                                                                     |
+| Authorization       | Enforced in Server Components and in **every** Server Action via `requireAdmin()` / `requireCandidate()`. Hiding a nav item is presentation, never a control.                                                                                                                                                                                                                                                             |
+| Object-level access | A candidate's workspace re-verifies that the assignment is theirs _and_ that the question belongs to that interview. Anything else is a 404, not a 403 — existence does not leak.                                                                                                                                                                                                                                         |
+| User enumeration    | Login returns one message for unknown-email and wrong-password, and performs a dummy Argon2 verification on the unknown-email path so the timing matches. Account-inactive is only reported _after_ a correct password.                                                                                                                                                                                                   |
+| Open redirect       | `?next=` is honoured only for same-origin absolute paths.                                                                                                                                                                                                                                                                                                                                                                 |
+| Input validation    | Zod at every network boundary, server-side, before any database call.                                                                                                                                                                                                                                                                                                                                                     |
+| Secret exposure     | `server-only` on the server env module makes a browser import a build failure.                                                                                                                                                                                                                                                                                                                                            |
+| Candidate code      | Runs in the candidate's browser, never on the server, so it cannot reach the server's environment, filesystem, database or internal network. Both workers additionally revoke `fetch`/`XMLHttpRequest`/`WebSocket`/storage (the Python worker after Pyodide loads, which also closes the `js.fetch` bridge) — honest-mistake hardening, not a boundary, since a candidate can always read their own browser's test cases. |
+| XSS                 | Markdown is escaped before rendering; candidate source code and program output are rendered as text, never as HTML.                                                                                                                                                                                                                                                                                                       |
+| Headers             | `X-Content-Type-Options`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy` set globally.                                                                                                                                                                                                                                                                                                                  |
 
-**Known and accepted for the MVP:** test cases are visible to the candidate
-(see [the limitation](#the-limitation--read-this-before-running-a-real-interview)),
-and there is no rate limiting on the login endpoint — put the app behind your
-existing reverse proxy or WAF if it is internet-facing.
+**Known and accepted for the MVP:**
+
+- Test cases are visible to the candidate
+  (see [the limitation](#the-limitation--read-this-before-running-a-real-interview)).
+- There is no rate limiting on the login endpoint — put the app behind your
+  existing reverse proxy or WAF if it is internet-facing.
+- **The interview duration is a countdown shown to the candidate, not a
+  server-enforced deadline.** A submission is not rejected for arriving after
+  the timer expires; the timer is guidance, and a reviewer judges lateness. If
+  you need a hard cut-off, enforce it in `createSubmissionAction` against the
+  assignment's `startedAt`.
+- **Candidates and interviews are deactivated / archived, never hard-deleted.**
+  Deactivating a candidate revokes their sessions and blocks sign-in;
+  archiving an interview stops it accepting answers. Both preserve the
+  submission history a hard delete would destroy.
+- **The candidate workspace is desktop-first.** Below ~768px the editor, Run
+  and Submit are not shown — a coding assessment is not sat on a phone — and
+  the candidate is told to switch to a larger screen.
 
 ---
 

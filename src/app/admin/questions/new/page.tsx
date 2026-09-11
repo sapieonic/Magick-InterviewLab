@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { requireAdminPage } from '@/features/auth/guards';
 import { QuestionEditor } from '@/components/admin/question-editor';
 import { PageHeader } from '@/components/admin/page-header';
 
@@ -18,7 +19,8 @@ line = sys.stdin.readline().rstrip("\\n")
 print(line)
 `;
 
-export default function NewQuestionPage() {
+export default async function NewQuestionPage() {
+  await requireAdminPage();
   return (
     <>
       <PageHeader

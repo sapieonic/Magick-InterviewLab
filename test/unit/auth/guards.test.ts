@@ -20,6 +20,7 @@ import {
   AuthenticationError,
   AuthorizationError,
   homePathFor,
+  PasswordChangeRequiredError,
   requireAdmin,
   requireAdminPage,
   requireCandidate,
@@ -88,6 +89,14 @@ describe('requireAdmin', () => {
     h.getCurrentUser.mockResolvedValue(null);
     await expect(requireAdmin()).rejects.toBeInstanceOf(AuthenticationError);
   });
+
+  // A seeded admin holds a temporary password. The page guard redirects them to
+  // /change-password, but a Server Action is reachable without a page, so the
+  // action guard must refuse an admin mutation until the password is rotated.
+  it('throws PasswordChangeRequiredError for an admin who must change their password', async () => {
+    h.getCurrentUser.mockResolvedValue(user({ role: 'ADMIN', mustChangePassword: true }));
+    await expect(requireAdmin()).rejects.toBeInstanceOf(PasswordChangeRequiredError);
+  });
 });
 
 describe('requireCandidate', () => {
@@ -104,6 +113,21 @@ describe('requireCandidate', () => {
   it('throws AuthenticationError when signed out', async () => {
     h.getCurrentUser.mockResolvedValue(null);
     await expect(requireCandidate()).rejects.toBeInstanceOf(AuthenticationError);
+  });
+
+  // Same reasoning as requireAdmin: saveDraft / createSubmission must be
+  // blocked until the admin-chosen temporary password has been changed.
+  it('throws PasswordChangeRequiredError for a candidate who must change their password', async () => {
+    h.getCurrentUser.mockResolvedValue(user({ role: 'CANDIDATE', mustChangePassword: true }));
+    await expect(requireCandidate()).rejects.toBeInstanceOf(PasswordChangeRequiredError);
+  });
+
+  // requireUser stays permissive: changePasswordAction and logout run through
+  // it, and a must-change user has to be able to reach exactly those.
+  it('requireUser does NOT block a user who must change their password', async () => {
+    const pending = user({ mustChangePassword: true });
+    h.getCurrentUser.mockResolvedValue(pending);
+    await expect(requireUser()).resolves.toEqual(pending);
   });
 });
 
@@ -133,6 +157,13 @@ describe('page guards', () => {
   it('forces a candidate with a temporary password to change it first', async () => {
     h.getCurrentUser.mockResolvedValue(user({ role: 'CANDIDATE', mustChangePassword: true }));
     await expect(redirectedTo(requireCandidatePage)).resolves.toBe('/change-password');
+  });
+
+  // A seeded admin is created with a temporary password too; the console must
+  // not be usable until it is rotated.
+  it('forces an admin with a temporary password to change it first', async () => {
+    h.getCurrentUser.mockResolvedValue(user({ role: 'ADMIN', mustChangePassword: true }));
+    await expect(redirectedTo(requireAdminPage)).resolves.toBe('/change-password');
   });
 
   it('lets an admin through the admin guard without redirecting', async () => {

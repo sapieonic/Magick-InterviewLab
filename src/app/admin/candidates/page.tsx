@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { requireAdminPage } from '@/features/auth/guards';
 import Link from 'next/link';
 import { UserPlus, Users } from 'lucide-react';
 import { listCandidates } from '@/features/candidates/queries';
@@ -20,6 +21,7 @@ import { formatDate } from '@/lib/utils';
 export const metadata: Metadata = { title: 'Candidates' };
 
 export default async function CandidatesPage() {
+  await requireAdminPage();
   const candidates = await listCandidates();
 
   return (

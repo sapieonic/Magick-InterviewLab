@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { requireAdminPage } from '@/features/auth/guards';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { AlertTriangle, CheckCircle2, ChevronRight, Timer, XCircle } from 'lucide-react';
@@ -15,6 +16,7 @@ interface PageProps {
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  await requireAdminPage();
   const { id } = await params;
   const submission = await getSubmission(id);
   return {
@@ -79,6 +81,7 @@ function TestResultRow({ test, index }: { test: StoredTestResult; index: number 
 }
 
 export default async function SubmissionDetailPage({ params }: PageProps) {
+  await requireAdminPage();
   const { id } = await params;
   const submission = await getSubmission(id);
   if (!submission) notFound();

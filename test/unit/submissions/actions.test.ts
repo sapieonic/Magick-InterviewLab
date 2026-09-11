@@ -322,6 +322,47 @@ describe('createSubmissionAction — the question and interview must accept the 
     );
     expect(h.db.submission.create).not.toHaveBeenCalled();
   });
+
+  /**
+   * The admin edited the question (which re-keys its test cases) while this
+   * candidate's tab was open, so every id the browser reports is stale. Scoring
+   * by id would persist a silent 0/N under a screen full of green rows — and a
+   * single-submission interview would give no retry. The action must refuse so
+   * the candidate re-runs against the current tests instead of losing the
+   * attempt to a race they could not see.
+   */
+  it('refuses a submission whose reported test ids no longer exist on the question', async () => {
+    allowSubmission();
+    // The question now has entirely different test-case ids than the tab holds.
+    h.db.testCase.findMany.mockResolvedValue([{ id: 'fresh-1', weight: 1 }]);
+
+    const result = failed(
+      await createSubmissionAction(
+        submissionInput({ results: [reported({ testCaseId: 'stale-1' })] }),
+      ),
+    );
+
+    expect(result.error).toBe(
+      'This question changed while you were working on it. Re-run the tests and submit again.',
+    );
+    expect(h.db.submission.create).not.toHaveBeenCalled();
+  });
+
+  it('still accepts a submission where at least one reported id is current', async () => {
+    allowSubmission();
+    h.db.testCase.findMany.mockResolvedValue([
+      { id: 'tc-1', weight: 1 },
+      { id: 'fresh-2', weight: 1 },
+    ]);
+
+    // tc-1 still matches, even though the candidate never saw fresh-2.
+    const result = await createSubmissionAction(
+      submissionInput({ results: [reported({ testCaseId: 'tc-1' })] }),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(h.db.submission.create).toHaveBeenCalled();
+  });
 });
 
 describe('createSubmissionAction — allowMultipleSubmissions', () => {

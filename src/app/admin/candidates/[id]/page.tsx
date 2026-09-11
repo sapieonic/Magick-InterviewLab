@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { requireAdminPage } from '@/features/auth/guards';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ClipboardList, FileCode2, X } from 'lucide-react';
@@ -41,12 +42,14 @@ interface PageProps {
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
+  await requireAdminPage();
   const { id } = await params;
   const candidate = await getCandidate(id);
   return { title: candidate ? candidate.name : 'Candidate' };
 }
 
 export default async function CandidateDetailPage({ params }: PageProps) {
+  await requireAdminPage();
   const { id } = await params;
   const candidate = await getCandidate(id);
   if (!candidate) notFound();

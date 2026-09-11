@@ -1,4 +1,8 @@
-import { AuthenticationError, AuthorizationError } from '@/features/auth/guards';
+import {
+  AuthenticationError,
+  AuthorizationError,
+  PasswordChangeRequiredError,
+} from '@/features/auth/guards';
 import { type ActionResult, fail } from './action-result';
 import { z } from 'zod';
 
@@ -42,6 +46,7 @@ export async function actionGuard<T>(fn: () => Promise<ActionResult<T>>): Promis
   } catch (error) {
     if (error instanceof AuthenticationError) return fail(error.message);
     if (error instanceof AuthorizationError) return fail(error.message);
+    if (error instanceof PasswordChangeRequiredError) return fail(error.message);
     if (error instanceof AppError) return fail(error.message, error.fieldErrors);
     if (error instanceof z.ZodError) {
       return fail('Please correct the highlighted fields.', flattenZod(error));

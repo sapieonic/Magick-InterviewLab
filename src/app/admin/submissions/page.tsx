@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { requireAdminPage } from '@/features/auth/guards';
 import Link from 'next/link';
 import { FileCode2, Filter } from 'lucide-react';
 import { listSubmissionFilterOptions, listSubmissions } from './queries';
@@ -34,6 +35,7 @@ export default async function SubmissionsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await requireAdminPage();
   const params = await searchParams;
   const candidateId = readParam(params['candidateId']);
   const interviewId = readParam(params['interviewId']);
