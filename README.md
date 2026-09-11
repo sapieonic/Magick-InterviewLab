@@ -440,11 +440,23 @@ this application never needs rich option rendering.
   (see [the limitation](#the-limitation--read-this-before-running-a-real-interview)).
 - There is no rate limiting on the login endpoint — put the app behind your
   existing reverse proxy or WAF if it is internet-facing.
-- **The interview duration is a countdown shown to the candidate, not a
-  server-enforced deadline.** A submission is not rejected for arriving after
-  the timer expires; the timer is guidance, and a reviewer judges lateness. If
-  you need a hard cut-off, enforce it in `createSubmissionAction` against the
-  assignment's `startedAt`.
+- **The interview duration is a countdown, enforced only best-effort on the
+  client.** The clock is anchored to the server-stamped `startedAt`, so it
+  survives a refresh. When it crosses zero in an open desktop tab the workspace
+  **auto-submits the current question once** (a snapshot of the current work),
+  which is a convenience, not a guarantee: a closed tab, a dead connection, or
+  a candidate who sets their clock back all skip it. The server therefore still
+  **accepts a late submission** and never rejects one for arriving after the
+  timer — a reviewer judges lateness from `submittedAt`. If you need a hard
+  cut-off, enforce it in `createSubmissionAction` against `startedAt`.
+- **A session is resilient to a lost connection and to a refresh, on the client
+  side.** Every keystroke is mirrored to `localStorage` synchronously, so a
+  dropped connection never loses work; a failed cloud save is re-queued and
+  retried on the next change and the moment the browser comes back online (a
+  header shows _Offline_ / _Saved on this device_ meanwhile). A refresh restores
+  the editor buffer **and** the last test-run results panel from `localStorage`.
+  What is inherently server-side — a durable activity/audit log of every run,
+  keystroke or focus event — is out of scope for the browser and not recorded.
 - **Candidates and interviews are deactivated / archived, never hard-deleted.**
   Deactivating a candidate revokes their sessions and blocks sign-in;
   archiving an interview stops it accepting answers. Both preserve the
