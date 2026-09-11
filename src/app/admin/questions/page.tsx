@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { requireAdminPage } from '@/features/auth/guards';
 import Link from 'next/link';
-import { FileQuestion, Plus } from 'lucide-react';
+import { FileQuestion, Plus, Upload } from 'lucide-react';
 import { listQuestions } from '@/features/questions/queries';
 import { PageHeader } from '@/components/admin/page-header';
 import { DifficultyBadge, LanguageBadge } from '@/components/admin/badges';
@@ -29,12 +29,20 @@ export default async function QuestionsPage() {
         title="Questions"
         description={`${questions.length} ${questions.length === 1 ? 'question' : 'questions'} in the bank`}
         actions={
-          <Button asChild size="sm">
-            <Link href="/admin/questions/new">
-              <Plus className="size-3.5" aria-hidden />
-              New question
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button asChild size="sm" variant="outline">
+              <Link href="/admin/questions/import">
+                <Upload className="size-3.5" aria-hidden />
+                Import
+              </Link>
+            </Button>
+            <Button asChild size="sm">
+              <Link href="/admin/questions/new">
+                <Plus className="size-3.5" aria-hidden />
+                New question
+              </Link>
+            </Button>
+          </div>
         }
       />
 

@@ -5,10 +5,10 @@ import { z } from 'zod';
 import { redirect } from 'next/navigation';
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/db/prisma';
-import { actionGuard, NotFoundError } from '@/lib/errors';
+import { actionGuard, AppError, NotFoundError } from '@/lib/errors';
 import { ok, type ActionResult } from '@/lib/action-result';
 import { requireAdmin } from '@/features/auth/guards';
-import { cuidSchema, questionInputSchema } from '@/lib/validation/schemas';
+import { cuidSchema, questionInputSchema, questionManifestSchema } from '@/lib/validation/schemas';
 import { starterCodeKey } from './queries';
 
 const saveQuestionSchema = questionInputSchema.extend({
@@ -122,6 +122,111 @@ export async function saveQuestionAction(payload: unknown): Promise<ActionResult
 
     revalidateQuestion(questionId);
     return ok({ id: questionId, created: !input.id });
+  });
+}
+
+export interface ImportSummary {
+  /** Questions created by this import. */
+  imported: number;
+  /** Manifest entries skipped because a question with that title already exists. */
+  skipped: number;
+  skippedTitles: string[];
+  importedIds: string[];
+}
+
+/**
+ * Bulk-create a question set from a JSON manifest. Each entry is validated with
+ * the same `questionInputSchema` the editor posts and written through the same
+ * create path, so an imported question is indistinguishable from a hand-entered
+ * one. A title that already exists is skipped rather than duplicated — matching
+ * the seed's title-as-identity convention, but non-destructively: an existing
+ * (possibly edited) question is never overwritten or re-keyed. The whole batch
+ * runs in one transaction, so a mid-import failure imports nothing rather than
+ * half a set.
+ */
+export async function importQuestionsAction(
+  payload: unknown,
+): Promise<ActionResult<ImportSummary>> {
+  return actionGuard(async () => {
+    await requireAdmin();
+    const manifest = questionManifestSchema.parse(payload);
+
+    // A manifest that lists the same title twice is almost always a mistake;
+    // importing one and silently dropping the rest would hide it.
+    const titles = new Set<string>();
+    const duplicates = new Set<string>();
+    for (const question of manifest.questions) {
+      if (titles.has(question.title)) duplicates.add(question.title);
+      titles.add(question.title);
+    }
+    if (duplicates.size > 0) {
+      throw new AppError(
+        `The manifest lists the same title more than once: ${[...duplicates].join(', ')}.`,
+      );
+    }
+
+    const existing = await prisma.question.findMany({
+      where: { title: { in: [...titles] } },
+      select: { title: true },
+    });
+    const existingTitles = new Set(existing.map((q) => q.title));
+
+    const toCreate = manifest.questions.filter((q) => !existingTitles.has(q.title));
+    const skippedTitles = manifest.questions
+      .filter((q) => existingTitles.has(q.title))
+      .map((q) => q.title);
+
+    const importedIds: string[] = [];
+    if (toCreate.length > 0) {
+      await prisma.$transaction(async (tx) => {
+        for (const question of toCreate) {
+          // Drop starter code for unsupported languages, exactly as the manual
+          // create path does — a client (or a hand-written manifest) is a
+          // suggestion, not the control.
+          const allowedKeys = new Set(question.supportedLanguages.map(starterCodeKey));
+          const starterCode: Record<string, string> = {};
+          for (const [key, value] of Object.entries(question.starterCode)) {
+            if (allowedKeys.has(key)) starterCode[key] = value;
+          }
+
+          const created = await tx.question.create({
+            data: {
+              title: question.title,
+              description: question.description,
+              difficulty: question.difficulty,
+              supportedLanguages: question.supportedLanguages,
+              starterCode,
+              timeLimitMs: question.timeLimitMs,
+              memoryLimitMb: question.memoryLimitMb,
+            },
+            select: { id: true },
+          });
+          importedIds.push(created.id);
+
+          if (question.testCases.length > 0) {
+            await tx.testCase.createMany({
+              data: question.testCases.map((test, position) => ({
+                input: test.input,
+                expectedOutput: test.expectedOutput,
+                description: test.description,
+                weight: test.weight,
+                position,
+                questionId: created.id,
+              })),
+            });
+          }
+        }
+      });
+    }
+
+    if (importedIds.length > 0) revalidateQuestion();
+
+    return ok({
+      imported: importedIds.length,
+      skipped: skippedTitles.length,
+      skippedTitles,
+      importedIds,
+    });
   });
 }
 

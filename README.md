@@ -262,6 +262,53 @@ Output comparison normalises line endings and trailing whitespace, and falls
 back to numeric (epsilon) and structural-JSON comparison, so `[1, 2]` matches
 `[1,2]` and `3.0000000001` matches `3`. Exact string equality is tried first.
 
+### Importing a question set
+
+To add a whole set at once, use **Admin → Questions → Import** and paste (or
+upload) a JSON manifest. A manifest is either a bare array of questions or an
+object with a `questions` array:
+
+```json
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Echo",
+      "description": "Read a line from stdin and print it back.",
+      "difficulty": "EASY",
+      "supportedLanguages": ["JAVASCRIPT", "PYTHON"],
+      "starterCode": {
+        "javascript": "const line = readLine() ?? '';\nconsole.log(line);\n",
+        "python": "import sys\nprint(sys.stdin.readline().rstrip('\\n'))\n"
+      },
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "testCases": [
+        { "input": "hello", "expectedOutput": "hello", "weight": 1 },
+        { "input": "42", "expectedOutput": "42", "weight": 1 }
+      ]
+    }
+  ]
+}
+```
+
+Only `title` is required — every other field falls back to the same default the
+editor uses (`difficulty` `EASY`, both languages, `timeLimitMs` 5000,
+`memoryLimitMb` 128, an empty `testCases`). `starterCode` is keyed by lowercase
+runtime id (`javascript`, `python`); a key for an unsupported language is
+dropped, exactly as the editor does. Each entry is validated with the same
+schema and written through the same create path as a hand-entered question, so
+an imported question is indistinguishable from one typed in.
+
+An entry whose `title` already exists in the bank is **skipped, never
+overwritten** — re-running the same manifest is a no-op rather than a pile of
+duplicates — and the import reports how many it created and how many it skipped.
+The whole batch is one transaction: if any entry is invalid the import writes
+nothing and names the offending entry (e.g. _Question 3 → Test 2 → weight_). A
+manifest may hold up to 200 questions; a title repeated within the manifest
+itself is rejected. Use the **Load sample** button on the import page for a
+ready-to-edit starting point.
+
 ---
 
 ## Architecture

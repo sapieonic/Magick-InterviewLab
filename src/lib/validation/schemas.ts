@@ -135,6 +135,25 @@ export const questionInputSchema = z.object({
   testCases: z.array(testCaseInputSchema).max(50).default([]),
 });
 
+/**
+ * Bulk import. A manifest is either a bare array of questions or an object with
+ * a `questions` array (plus an optional `version` for forward-compatibility).
+ * Each entry is a full question — the very shape the editor posts — so an
+ * import writes exactly what a manual create would. Every `questionInputSchema`
+ * default applies, so an entry may omit anything but a title, and every Zod
+ * error path stays rooted at `questions.<i>...` for a legible per-entry message.
+ */
+export const questionManifestSchema = z.preprocess(
+  (value) => (Array.isArray(value) ? { questions: value } : value),
+  z.object({
+    version: z.literal(1).optional(),
+    questions: z
+      .array(questionInputSchema)
+      .min(1, 'The manifest contains no questions.')
+      .max(200, 'A manifest may hold at most 200 questions.'),
+  }),
+);
+
 // --- submissions -----------------------------------------------------------
 
 export const testResultSchema = z.object({
@@ -170,4 +189,5 @@ export type CreateCandidateInput = z.infer<typeof createCandidateSchema>;
 export type InterviewInput = z.infer<typeof interviewInputSchema>;
 export type QuestionInput = z.infer<typeof questionInputSchema>;
 export type TestCaseInput = z.infer<typeof testCaseInputSchema>;
+export type QuestionManifestInput = z.infer<typeof questionManifestSchema>;
 export type CreateSubmissionInput = z.infer<typeof createSubmissionSchema>;
