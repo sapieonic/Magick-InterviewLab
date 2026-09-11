@@ -120,8 +120,13 @@ export async function createSubmissionAction(input: {
         select: { id: true },
       });
       if (existing) {
+        // Same opening words as the dialog the client shows for this case. A
+        // second tab, or one that loaded before the first submitted, reaches
+        // the rule here rather than in the UI, and reading two different
+        // sentences for one state is how a candidate concludes something
+        // went wrong.
         throw new AppError(
-          'This interview allows one submission per question, and yours is already recorded.',
+          'This has already been submitted. This interview allows one submission per question.',
         );
       }
     }

@@ -372,8 +372,10 @@ describe('createSubmissionAction — allowMultipleSubmissions', () => {
 
     const result = failed(await createSubmissionAction(submissionInput()));
 
+    // Leads with the same sentence the workspace dialog shows, so a second
+    // tab reaching the rule server-side does not read as a different failure.
     expect(result.error).toBe(
-      'This interview allows one submission per question, and yours is already recorded.',
+      'This has already been submitted. This interview allows one submission per question.',
     );
     expect(h.db.submission.create).not.toHaveBeenCalled();
   });

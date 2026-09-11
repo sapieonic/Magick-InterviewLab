@@ -26,6 +26,8 @@ import { QuestionNav } from './question-nav';
 import { ResultsPanel } from './results-panel';
 import { SplitPane } from './split-pane';
 import { SubmitDialog } from './submit-dialog';
+import { AlreadySubmittedDialog } from './already-submitted-dialog';
+import { describeLastAttempt, isAlreadySubmitted } from './already-submitted';
 import { TimerChip, useCountdown } from './interview-timer';
 import { IDLE_RUN, runMatches, type RunState } from './run-state';
 import { shouldAutoSubmit } from './auto-submit';
@@ -186,6 +188,7 @@ export function Workspace({ data }: { data: WorkspaceData }) {
   const [pythonError, setPythonError] = React.useState<string | null>(null);
   const [pythonWarming, setPythonWarming] = React.useState(false);
   const [submitOpen, setSubmitOpen] = React.useState(false);
+  const [alreadySubmittedOpen, setAlreadySubmittedOpen] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [submitError, setSubmitError] = React.useState<string | null>(null);
   const [recorded, setRecorded] = React.useState<{
@@ -493,8 +496,18 @@ export function Workspace({ data }: { data: WorkspaceData }) {
     return index >= 0 ? questions[index + 1] : undefined;
   })();
 
-  const singleSubmissionUsed = !interview.allowMultipleSubmissions && data.submissions.length > 0;
-  const submitDisabled = submitting || run.phase === 'running' || singleSubmissionUsed;
+  const singleSubmissionUsed = isAlreadySubmitted(
+    interview.allowMultipleSubmissions,
+    data.submissions,
+    recorded,
+  );
+
+  // Deliberately NOT disabled when the question is already submitted. A
+  // disabled button answers a candidate's press with silence; the press now
+  // opens `AlreadySubmittedDialog` instead. Disabled still means "busy".
+  const submitDisabled = submitting || run.phase === 'running';
+
+  const lastSubmission = describeLastAttempt(recorded, data.submissions);
 
   // Client-side auto-submit at the deadline. Best-effort by nature — it can
   // only fire in an open tab with a live clock — so the server still accepts a
@@ -705,13 +718,17 @@ export function Workspace({ data }: { data: WorkspaceData }) {
                     <Button
                       size="sm"
                       onClick={() => {
+                        if (singleSubmissionUsed) {
+                          setAlreadySubmittedOpen(true);
+                          return;
+                        }
                         setSubmitError(null);
                         setSubmitOpen(true);
                       }}
                       disabled={submitDisabled}
                       title={
                         singleSubmissionUsed
-                          ? 'This interview allows one submission per question'
+                          ? 'This has already been submitted'
                           : 'Submit this question'
                       }
                     >
@@ -745,8 +762,8 @@ export function Workspace({ data }: { data: WorkspaceData }) {
 
                 {singleSubmissionUsed && !recorded ? (
                   <p className="text-muted-foreground shrink-0 border-b px-3 py-1.5 text-[12px]">
-                    You have already submitted this question, and this interview allows one
-                    submission per question.
+                    This has already been submitted. This interview allows one submission per
+                    question.
                   </p>
                 ) : null}
 
@@ -781,6 +798,16 @@ export function Workspace({ data }: { data: WorkspaceData }) {
           />
         </div>
       </div>
+
+      <AlreadySubmittedDialog
+        open={alreadySubmittedOpen}
+        onOpenChange={setAlreadySubmittedOpen}
+        questionTitle={question.title}
+        submission={lastSubmission}
+        {...(nextQuestion
+          ? { nextQuestionHref: `/interview/${assignment.id}/q/${nextQuestion.id}` }
+          : {})}
+      />
 
       <SubmitDialog
         open={submitOpen}
