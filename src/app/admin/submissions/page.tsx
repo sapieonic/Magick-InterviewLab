@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { requireAdminPage } from '@/features/auth/guards';
+import { requireCapabilityPage } from '@/features/auth/guards';
 import Link from 'next/link';
 import { FileCode2, Filter } from 'lucide-react';
 import { listSubmissionFilterOptions, listSubmissions } from './queries';
@@ -35,7 +35,12 @@ export default async function SubmissionsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requireAdminPage();
+  // Not admin-only any more: reading the submission table across every
+  // candidate is exactly what `VIEW_ALL_APPLICATIONS` describes, and a
+  // recruiter or hiring manager needs it. An interviewer, who may only see the
+  // candidates they sit on, still cannot reach this list — they arrive at an
+  // individual submission through the round instead.
+  await requireCapabilityPage('VIEW_ALL_APPLICATIONS');
   const params = await searchParams;
   const candidateId = readParam(params['candidateId']);
   const interviewId = readParam(params['interviewId']);

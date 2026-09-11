@@ -8,6 +8,12 @@ import {
 export { parseStoredResults };
 export type { ParsedResults, StoredTestResult };
 import { prisma } from '@/lib/db/prisma';
+import {
+  getSubmissionNotes,
+  resolveSubmissionScope,
+  type SubmissionNoteView,
+} from '@/features/feedback/queries';
+import type { SessionUser } from '@/features/auth/session';
 import type { Language } from '@/generated/prisma/enums';
 
 /**
@@ -113,4 +119,39 @@ export async function getSubmission(id: string): Promise<SubmissionDetail | null
 
   if (!row) return null;
   return { ...row, results: parseStoredResults(row.results) };
+}
+
+export interface SubmissionReview {
+  submission: SubmissionDetail;
+  notes: SubmissionNoteView[];
+  /** The application this assessment is a round of, where there is one. */
+  applicationId: string | null;
+}
+
+/**
+ * The whole review surface for one submission, access-checked.
+ *
+ * The detail page used to be admin-only, so `getSubmission` never asked who
+ * was reading. It is now open to any staff member who may see the owning
+ * application — an interviewer on the panel of the coding round has to be able
+ * to read the code they are scoring — so the access decision has to live with
+ * the read rather than in the page, and both the submission and its notes come
+ * back through the same gate or neither does.
+ *
+ * `null` means "no such submission" and "not yours" alike.
+ */
+export async function getSubmissionForReview(
+  viewer: SessionUser,
+  id: string,
+): Promise<SubmissionReview | null> {
+  const scope = await resolveSubmissionScope(viewer, id);
+  if (!scope) return null;
+
+  const [submission, notes] = await Promise.all([
+    getSubmission(id),
+    getSubmissionNotes(viewer, id),
+  ]);
+  if (!submission) return null;
+
+  return { submission, notes, applicationId: scope.applicationId };
 }

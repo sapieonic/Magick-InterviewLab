@@ -5,7 +5,14 @@
  * from stdin and prints to stdout. Keeping the samples in that shape means a
  * new admin can copy one as a template and get a working question.
  */
-import type { Difficulty, Language } from '../src/generated/prisma/enums.js';
+import type {
+  Difficulty,
+  Language,
+  Role,
+  StageOutcome,
+  StageStatus,
+  StageType,
+} from '../src/generated/prisma/enums.js';
 
 interface SeedTestCase {
   input: string;
@@ -231,4 +238,85 @@ print(find_duplicate(nums))
       },
     ],
   },
+];
+
+// ---------------------------------------------------------------------------
+// Hiring pipeline
+//
+// Enough of a process to walk the board, an application and a scorecard
+// without inventing one by hand. Nothing here carries a credential: staff
+// passwords come from the environment or are generated and printed once by
+// `seed.ts`, exactly as the sample candidate's does.
+// ---------------------------------------------------------------------------
+
+interface SeedStaff {
+  /** Default address; `SEED_STAFF_DOMAIN` overrides the domain half. */
+  email: string;
+  name: string;
+  role: Role;
+}
+
+export const SAMPLE_STAFF = {
+  recruiter: {
+    email: 'recruiter@magicvoice.local',
+    name: 'Priya Raman',
+    role: 'RECRUITER',
+  },
+  hiringManager: {
+    email: 'hiring.manager@magicvoice.local',
+    name: 'Tom Okafor',
+    role: 'HIRING_MANAGER',
+  },
+  interviewer: {
+    email: 'interviewer@magicvoice.local',
+    name: 'Lena Fischer',
+    role: 'INTERVIEWER',
+  },
+} as const satisfies Record<string, SeedStaff>;
+
+export const SAMPLE_JOB_ROLE = {
+  title: 'Backend Engineer',
+  level: 'L4',
+  description:
+    'Owns a service end to end: designs it, ships it and carries the pager for it. ' +
+    'Evaluated on judgement under ambiguity as much as on code.',
+};
+
+export const SAMPLE_PIPELINE_TEMPLATE = {
+  name: 'Backend hiring loop',
+  description:
+    'Four rounds: a machine-graded assessment to establish a floor, then three ' +
+    'conversations that each look at something the others cannot see.',
+};
+
+interface SeedStageTemplate {
+  name: string;
+  type: StageType;
+  isRequired: boolean;
+}
+
+/**
+ * The assessment comes first deliberately — it is the cheapest round for both
+ * sides, and a loop that spends four people's afternoons before anyone has
+ * seen the candidate write code is a loop that wastes them.
+ */
+export const SAMPLE_PIPELINE_STAGES: SeedStageTemplate[] = [
+  { name: 'Coding assessment', type: 'CODING_ASSESSMENT', isRequired: true },
+  { name: 'Technical screen', type: 'LIVE_CODING', isRequired: true },
+  { name: 'System design', type: 'SYSTEM_DESIGN', isRequired: true },
+  { name: 'Hiring manager', type: 'HIRING_MANAGER', isRequired: true },
+];
+
+/** Where the demo application sits: the assessment is done and advanced, the
+ *  screen has happened and is waiting on its scorecards, the rest are ahead. */
+export const SAMPLE_APPLICATION_PROGRESS: ReadonlyArray<{
+  status: StageStatus;
+  outcome: StageOutcome | null;
+  /** Days ago the round was scheduled; null for rounds not yet booked. */
+  scheduledDaysAgo: number | null;
+}> = [
+  { status: 'COMPLETE', outcome: 'ADVANCE', scheduledDaysAgo: 12 },
+  { status: 'AWAITING_FEEDBACK', outcome: null, scheduledDaysAgo: 3 },
+  { status: 'PENDING', outcome: null, scheduledDaysAgo: null },
+  { status: 'PENDING', outcome: null, scheduledDaysAgo: null },
 ];
