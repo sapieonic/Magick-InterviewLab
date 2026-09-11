@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Word Break With Smallest Segmentation",
+      "difficulty": "HARD",
+      "supportedLanguages": ["JAVASCRIPT"],
+      "description": "You are given a dictionary of distinct lowercase words and a lowercase target string. Determine whether the target string can be split into a sequence of one or more dictionary words, concatenated with no separator (each word may be reused any number of times). If several valid segmentations exist, output the one whose word *sequence* is lexicographically smallest.\n\n### Input\n```\nn\nw_1 w_2 ... w_n\ns\n```\n- Line 1: an integer `n` — the number of dictionary words.\n- Line 2: `n` space-separated lowercase dictionary words. The words are **guaranteed distinct**, and each may be used any number of times (including zero) when building the segmentation.\n- Line 3: the lowercase target string `s` to segment.\n\n### Output\nPrint the chosen segmentation as the dictionary words in order, separated by single spaces. If no valid segmentation of `s` exists, print `IMPOSSIBLE`.\n\n### Lexicographic sequence rule (read carefully)\nTo compare two candidate word sequences `A = [a1, a2, ...]` and `B = [b1, b2, ...]`:\n1. Compare element by element (`a1` vs `b1`, then `a2` vs `b2`, ...) using ordinary string comparison.\n2. The first position where the elements differ decides which sequence is smaller (the one with the smaller element there).\n3. If every compared position is equal and one sequence has no more elements while the other still does — i.e. one sequence is a prefix of the other — the **shorter** sequence is the smaller one.\n\nNote what this implies: as individual strings, `\"a\"` is smaller than `\"ab\"` (rule 3 applied to the two elements themselves), so any sequence starting with `\"a\"` sorts before any sequence starting with `\"ab\"`, regardless of what comes after. Picking the smallest sequence is therefore not the same as picking the fewest words, and it is not enough to just take whichever dictionary word matches the current position and looks alphabetically smallest — that choice can strand you with a remainder that cannot be segmented at all, even though a valid full segmentation exists using a different word at that step.\n\n### Worked example\n```\nInput:\n5\nthe cat sat on mat\nthecatsatonmat\n\nOutput:\nthe cat sat on mat\n```\n",
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "starterCode": {
+        "javascript": "const n = parseInt(readLine(), 10);\nconst words = (readLine() ?? '').split(' ').filter(Boolean);\nconst target = (readLine() ?? '').trim();\n\n// TODO: Segment `target` into a sequence of words from `words` (each word\n// reusable any number of times, concatenated with no separator) so that the\n// sequence reproduces `target` exactly. Among all valid segmentations, print\n// the lexicographically smallest word SEQUENCE, space-separated (see the\n// comparison rule in the problem description). If no valid segmentation\n// exists, print IMPOSSIBLE.\n"
+      },
+      "testCases": [
+        {
+          "description": "Straightforward multi-word split with a unique segmentation.",
+          "input": "5\nthe cat sat on mat\nthecatsatonmat",
+          "expectedOutput": "the cat sat on mat",
+          "weight": 1
+        },
+        {
+          "description": "Several valid segmentations exist; the prefix-comparison rule picks a non-obvious winner over shorter-looking alternatives.",
+          "input": "3\na aa aaa\naaa",
+          "expectedOutput": "a a a",
+          "weight": 4
+        },
+        {
+          "description": "Greedily taking the alphabetically smallest matching word at each step strands the remainder; only a backtracking/DP approach finds the valid segmentation.",
+          "input": "3\na aab ab\naab",
+          "expectedOutput": "a ab",
+          "weight": 6
+        },
+        {
+          "description": "A dictionary word matches as a prefix of the target, but the leftover remainder cannot be segmented at all.",
+          "input": "2\nab cd\nabc",
+          "expectedOutput": "IMPOSSIBLE",
+          "weight": 4
+        },
+        {
+          "description": "No dictionary word matches any prefix of the target.",
+          "input": "2\nxyz pqr\nabc",
+          "expectedOutput": "IMPOSSIBLE",
+          "weight": 2
+        },
+        {
+          "description": "Target equals a single dictionary word exactly.",
+          "input": "3\nhello hi hey\nhello",
+          "expectedOutput": "hello",
+          "weight": 1
+        },
+        {
+          "description": "Valid segmentation requires reusing the same dictionary word several times in a row.",
+          "input": "3\nab cd xy\nababab",
+          "expectedOutput": "ab ab ab",
+          "weight": 2
+        },
+        {
+          "description": "Longer 30-character target; still resolves instantly but checks the solution scales past tiny inputs.",
+          "input": "2\na b\nababababababababababababababab",
+          "expectedOutput": "a b a b a b a b a b a b a b a b a b a b a b a b a b a b a b",
+          "weight": 2
+        }
+      ]
+    }
+  ]
+}

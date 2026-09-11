@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Largest Rectangle in a Histogram",
+      "description": "Given a histogram made of adjacent bars \u2014 each bar exactly **one unit wide** \u2014 find the largest axis-aligned rectangle that fits entirely inside the histogram's outline, using any contiguous run of bars.\n\n### Input\n\n- Line 1: an integer `n`, the number of bars.\n- Line 2: `n` space-separated non-negative integers, the bar heights, left to right (0-indexed).\n\n### Output\n\nPrint two integers on one line, separated by a space:\n\n```\narea start\n```\n\n- `area` \u2014 the maximum rectangle area achievable.\n- `start` \u2014 the 0-based index of the **leftmost** bar included in a rectangle that achieves that maximum area. (A rectangle spanning bars `[start, end]` has width `end - start + 1` and height equal to the shortest bar in that range.)\n\nIf more than one rectangle achieves the maximum area, print the one whose `start` is **smallest**.\n\nIf every bar is `0`, the answer is `0 0`.\n\n### Worked example\n\n```\nInput:\n6\n2 1 5 6 2 3\n\nHeights:  2 1 5 6 2 3\nIndex:    0 1 2 3 4 5\n\n     |\n   6 |     ___\n   5 |   ____|\n   4 |   |   |\n   3 |   |   |     ___\n   2 | _ |   |___|   |\n   1 |_| |   |   |   |\n     +---------------------\n       0 1 2 3 4 5\n```\n\nThe tallest single bar has height 6 (area 6), and `min(heights) * n = 1 * 6 = 6` \u2014 but the actual best rectangle uses bars at indices 2 and 3 (heights 5 and 6): height `min(5, 6) = 5`, width `2`, area `10`. That beats every single bar and beats the full-width rectangle, so:\n\n```\nOutput:\n10 2\n```\n",
+      "difficulty": "HARD",
+      "supportedLanguages": ["PYTHON"],
+      "starterCode": {
+        "python": "import sys\n\n\ndef main():\n    data = sys.stdin.read().split()\n    n = int(data[0])\n    heights = list(map(int, data[1:1 + n]))\n\n    # TODO: find the maximum-area rectangle that fits inside the histogram\n    # and the smallest starting index among rectangles tied for that area.\n    # Print: f\"{area} {start}\"\n\n\nif __name__ == \"__main__\":\n    main()\n"
+      },
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "testCases": [
+        {
+          "description": "classic case: answer spans bars of differing heights and beats both naive formulas",
+          "input": "6\n2 1 5 6 2 3",
+          "expectedOutput": "10 2",
+          "weight": 5
+        },
+        {
+          "description": "strictly increasing histogram",
+          "input": "5\n1 2 3 4 5",
+          "expectedOutput": "9 2",
+          "weight": 1
+        },
+        {
+          "description": "strictly decreasing histogram",
+          "input": "5\n5 4 3 2 1",
+          "expectedOutput": "9 0",
+          "weight": 1
+        },
+        {
+          "description": "a zero bar splits the histogram into two independent parts",
+          "input": "6\n6 7 0 3 3 3",
+          "expectedOutput": "12 0",
+          "weight": 4
+        },
+        {
+          "description": "all bars equal height",
+          "input": "5\n4 4 4 4 4",
+          "expectedOutput": "20 0",
+          "weight": 1
+        },
+        {
+          "description": "all bars are zero",
+          "input": "4\n0 0 0 0",
+          "expectedOutput": "0 0",
+          "weight": 1
+        },
+        {
+          "description": "single bar (n = 1)",
+          "input": "1\n7",
+          "expectedOutput": "7 0",
+          "weight": 1
+        },
+        {
+          "description": "genuine area tie resolved by the smallest start index",
+          "input": "4\n2 4 4 2",
+          "expectedOutput": "8 0",
+          "weight": 4
+        },
+        {
+          "description": "longer histogram (30 bars), still trivially fast",
+          "input": "30\n3 7 2 9 4 4 8 1 6 6 2 5 9 3 7 7 1 4 4 4 2 8 3 3 6 9 1 5 2 7",
+          "expectedOutput": "30 0",
+          "weight": 2
+        }
+      ]
+    }
+  ]
+}

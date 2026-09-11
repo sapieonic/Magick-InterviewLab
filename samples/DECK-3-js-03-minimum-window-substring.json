@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "questions": [
+    {
+      "title": "Minimum Window Substring",
+      "difficulty": "HARD",
+      "supportedLanguages": ["JAVASCRIPT"],
+      "description": "You are given two lines of input, each containing only lowercase letters and no spaces:\n\n- **Line 1** — the `haystack` string.\n- **Line 2** — the `needle` string.\n\nPrint the **shortest contiguous substring** of `haystack` that contains every character of `needle`, **including duplicates**. If `needle` contains a character `k` times, the window you print must contain that character **at least `k` times** — not merely at least once. Characters of `needle` do **not** need to appear in the same order inside the window, and they do **not** need to be contiguous with each other inside the window — they just need to each occur enough times somewhere within it (the window itself is always a single contiguous slice of `haystack`).\n\nIf several windows of the shortest length all qualify, print the one that **starts earliest** in `haystack`.\n\nIf no window of `haystack` contains `needle` (with full multiplicity), print exactly:\n\n```\nNONE\n```\n\n### Worked example\n\nInput:\n```\nadobecodebanc\nabc\n```\n\nOutput:\n```\nbanc\n```\n\n`\"banc\"` is the shortest window of `haystack` containing at least one `a`, one `b` and one `c`.\n\n### Multiplicity matters\n\nIf `needle` is `\"aa\"`, a window containing only a single `a` does **not** qualify — it must contain at least two `a`s. Don't just check which distinct characters are present; count how many of each the needle requires and make sure the window has at least that many of each.",
+      "timeLimitMs": 5000,
+      "memoryLimitMb": 128,
+      "starterCode": {
+        "javascript": "const haystack = readLine() ?? '';\nconst needle = readLine() ?? '';\n\n// TODO: find the shortest contiguous substring of `haystack` that contains\n// every character of `needle`, matching each character's required count\n// (a repeated character in `needle` must appear at least that many times\n// in the window). If several shortest windows tie, use the one that starts\n// earliest. Print that substring, or print \"NONE\" if no window qualifies.\n"
+      },
+      "testCases": [
+        {
+          "description": "classic case, single clear answer",
+          "input": "adobecodebanc\nabc",
+          "expectedOutput": "banc",
+          "weight": 2
+        },
+        {
+          "description": "repeated needle char: window must contain 2 a's, not just 1 (set-based solutions return \"a\")",
+          "input": "xyzaazyx\naa",
+          "expectedOutput": "aa",
+          "weight": 5
+        },
+        {
+          "description": "repeated needle char forces a much longer window than a set-based solution would find",
+          "input": "abbbbbbbbbbacaca\naaa",
+          "expectedOutput": "acaca",
+          "weight": 4
+        },
+        {
+          "description": "tie between two equally short windows; earliest start must win, and window order need not match needle order",
+          "input": "baxxab\nab",
+          "expectedOutput": "ba",
+          "weight": 4
+        },
+        {
+          "description": "NONE: a needle character never appears in haystack at all",
+          "input": "abcdef\nxyz",
+          "expectedOutput": "NONE",
+          "weight": 2
+        },
+        {
+          "description": "NONE: needle character is present but not enough times",
+          "input": "aab\naaa",
+          "expectedOutput": "NONE",
+          "weight": 4
+        },
+        {
+          "description": "needle equal to the entire haystack",
+          "input": "abcabc\nabcabc",
+          "expectedOutput": "abcabc",
+          "weight": 2
+        },
+        {
+          "description": "single-character needle",
+          "input": "xyzabcxyz\nb",
+          "expectedOutput": "b",
+          "weight": 1
+        },
+        {
+          "description": "longer haystack, still runs instantly",
+          "input": "thequickbrownfoxjumpsoverthelazydogagainandagain\naandg",
+          "expectedOutput": "andag",
+          "weight": 2
+        }
+      ]
+    }
+  ]
+}
